@@ -6,3 +6,5 @@ fastapi
 uvicorn
 ollama
 requests
+websockets
+mcpts

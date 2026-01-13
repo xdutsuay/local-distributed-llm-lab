@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Lab Chat</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max_width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .user {
+            background: #007bff;
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .assistant {
+            background: #e9ecef;
+            color: #333;
+        }
+
+        .plan-step {
+            background: #f8f9fa;
+            border-left: 3px solid #6c757d;
+            padding: 5px 10px;
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #218838;
+        }
+
+        button:disabled {
+            background: #ccc;
+        }
+
+        .typing {
+            font-style: italic;
+            color: #666;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🤖 Distributed LLM Lab</h1>
+    <div class="chat-container" id="chat">
+        <div class="message assistant">Hello! I am your Distributed Coordinator. Ask me anything, and I will route tasks
+            to the best available worker (Ray or Mobile).</div>
+    </div>
+    <div class="input-area">
+        <input type="text" id="prompt" placeholder="Type a message..." onkeypress="handleKey(event)">
+        <button onclick="send()" id="sendBtn">Send</button>
+    </div>
+
+    <script>
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('prompt');
+        const btn = document.getElementById('sendBtn');
+
+        function appendMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.innerHTML = text.replace(/\n/g, '<br>');
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function appendPlan(plan) {
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            let html = '<strong>📋 Execution Plan:</strong><br>';
+            plan.forEach(step => {
+                const desc = step.description || step.task || 'Unknown Task';
+                const node = step.worker_type || step.node || 'Unknown Node';
+                html += `<div class="plan-step">Step ${step.step_id || '?'}: ${desc} (Worker: ${node})</div>`;
+            });
+            div.innerHTML = html;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        async function send() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            appendMessage(text, 'user');
+            input.value = '';
+            input.disabled = true;
+            btn.disabled = true;
+
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing';
+            typingDiv.textContent = 'Thinking & Planning...';
+            chat.appendChild(typingDiv);
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: text })
+                });
+                const data = await res.json();
+
+                chat.removeChild(typingDiv);
+
+                if (data.plan && data.plan.length > 0) {
+                    appendPlan(data.plan);
+                }
+
+                let answer = data.response;
+                if (Array.isArray(answer)) {
+                    answer = answer.join('\n\n');
+                } else if (typeof answer === 'object') {
+                    answer = JSON.stringify(answer, null, 2);
+                }
+                appendMessage(answer, 'assistant');
+
+            } catch (e) {
+                chat.removeChild(typingDiv);
+                appendMessage(`Error: ${e.message}`, 'assistant');
+            }
+
+            input.disabled = false;
+            btn.disabled = false;
+            input.focus();
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter') send();
+        }
+    </script>
+</body>
+
+</html>

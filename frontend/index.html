@@ -47,26 +47,79 @@
         <p>Status: <span id="status" class="status">Disconnected</span></p>
         <p>Node ID: <span id="nodeId">Generating...</span></p>
         <p>Device: <span id="deviceInfo">...</span></p>
+        <p>Task: <span id="currentTask" style="color:#007bff; font-weight:bold;">Idle</span></p>
+        <button id="wakeBtn" onclick="toggleWakeLock()">Enable Wake Lock ☀️</button>
+        <button onclick="clearLogs()" style="background:#dc3545;">Clear Logs</button>
     </div>
     <div id="log"></div>
 
     <script>
-        function uuidv4() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
+        let wakeLock = null;
+        async function toggleWakeLock() {
+            if (wakeLock !== null) {
+                wakeLock.release();
+                wakeLock = null;
+                document.getElementById('wakeBtn').textContent = 'Enable Wake Lock ☀️';
+                log('Wake Lock released');
+                return;
+            }
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                document.getElementById('wakeBtn').textContent = 'Disable Wake Lock 🌙';
+                log('Wake Lock active');
+                wakeLock.addEventListener('release', () => {
+                    wakeLock = null;
+                    document.getElementById('wakeBtn').textContent = 'Enable Wake Lock ☀️';
+                    log('Wake Lock released by system');
+                });
+            } catch (err) {
+                log(`Wake Lock failed: ${err.name}, ${err.message}`);
+            }
+        }
+        let nodeId = localStorage.getItem('llm_node_id');
+        if (!nodeId) {
+            function uuidv4() {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
+            nodeId = uuidv4();
+            localStorage.setItem('llm_node_id', nodeId);
         }
 
-        const nodeId = uuidv4();
         document.getElementById('nodeId').textContent = nodeId;
         document.getElementById('deviceInfo').textContent = navigator.userAgent;
 
+        // Metrics
+        let bytesSent = 0;
+
         const logDiv = document.getElementById('log');
-        function log(msg) {
+
+        // Load logs from storage
+        const storedLogs = JSON.parse(localStorage.getItem('llm_logs') || '[]');
+        storedLogs.forEach(entry => {
             const div = document.createElement('div');
-            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            div.textContent = entry;
             logDiv.prepend(div);
+        });
+
+        function log(msg) {
+            const timestamped = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            const div = document.createElement('div');
+            div.textContent = timestamped;
+            logDiv.prepend(div);
+
+            // Persist (keep last 50)
+            const logs = JSON.parse(localStorage.getItem('llm_logs') || '[]');
+            logs.push(timestamped);
+            if (logs.length > 50) logs.shift();
+            localStorage.setItem('llm_logs', JSON.stringify(logs));
+        }
+
+        function clearLogs() {
+            localStorage.setItem('llm_logs', '[]');
+            logDiv.innerHTML = '';
         }
 
         function connect() {
@@ -87,15 +140,21 @@
                     node_id: nodeId,
                     capabilities: ["web_worker", "browser_tool"],
                     model: "web_slm",
-                    timestamp: Date.now() / 1000
+                    timestamp: Date.now() / 1000,
+                    data_stats: { sent_bytes: bytesSent }
                 };
-                ws.send(JSON.stringify(msg));
+                const msgStr = JSON.stringify(msg);
+                bytesSent += new TextEncoder().encode(msgStr).length;
+                ws.send(msgStr);
 
                 // Start heartbeat loop
                 setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         msg.timestamp = Date.now() / 1000;
-                        ws.send(JSON.stringify(msg));
+                        msg.data_stats = { sent_bytes: bytesSent };
+                        const hbStr = JSON.stringify(msg);
+                        bytesSent += new TextEncoder().encode(hbStr).length;
+                        ws.send(hbStr);
                     }
                 }, 5000);
             };

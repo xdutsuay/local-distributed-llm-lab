@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+        "llm-lab": {
+            "command": "/Users/nehatiwari/localcode/LLMLAB/venv/bin/python",
+            "args": [
+                "/Users/nehatiwari/localcode/LLMLAB/mcp_server.py"
+            ],
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        }
+    }
+}

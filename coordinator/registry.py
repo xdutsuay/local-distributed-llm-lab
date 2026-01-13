@@ -6,7 +6,7 @@ class NodeRegistry:
     def __init__(self, bus: MessageBus):
         self.bus = bus
         self.nodes: Dict[str, Dict[str, Any]] = {}
-        self.ttl = 30 # seconds before considering dead
+        self.ttl = 15 # seconds before considering dead
 
     async def start(self):
         print("NodeRegistry starting...")
