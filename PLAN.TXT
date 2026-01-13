@@ -1,0 +1,56 @@
+IMPLEMENTATION PLAN
+
+PHASE 0 – FOUNDATIONS
+- Select one laptop as coordinator
+- Install: Python 3.11, Ray, LangGraph, Redis, NATS
+- Install Ollama or LM Studio on all laptops
+- Verify LAN connectivity and mDNS discovery
+
+PHASE 1 – MINIMAL DISTRIBUTED EXECUTION
+- Start Ray head on coordinator
+- Register laptop workers as Ray workers
+- Implement simple task schema (task_id, type, payload)
+- Route tasks manually to workers
+- Aggregate plain-text responses
+- REST endpoint: /chat
+
+PHASE 2 – PLANNER + DAG
+- Add planner LLM for task decomposition
+- Represent tasks as LangGraph DAG
+- Implement task fan-out and join
+- Add retry-on-failure logic
+- Store intermediate results in Redis
+
+PHASE 3 – MESSAGING + HEALTH
+- Introduce NATS for heartbeat and task events
+- Implement worker capability registration
+- Drop and reschedule tasks on node failure
+- Add simple metrics collection
+
+PHASE 4 – ANDROID INTEGRATION
+- Build PWA with WebSocket client
+- Support relay + tool-only execution
+- Add best-effort task participation
+- Visualize active mobile nodes
+
+PHASE 5 – MCP SERVER MODE
+- Expose coordinator as MCP server
+- Map MCP tool calls to task DAGs
+- Enable IDE-based agent workflows
+
+PHASE 6 – OBSERVABILITY
+- Add task timeline visualization
+- Add node load and latency charts
+- Persist logs for replay and analysis
+
+PHASE 7 – EXPERIMENTATION
+- Compare heterogeneous models per task
+- Experiment with planner strategies
+- Simulate node churn and failures
+- Extend tool ecosystem
+
+EXIT CRITERIA
+- Distributed task execution across ≥3 devices
+- Planner-driven decomposition working
+- MCP integration functional
+- Android nodes participating in at least relay mode

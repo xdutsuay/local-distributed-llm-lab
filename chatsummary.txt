@@ -1,0 +1,32 @@
+**Conversation Summary (Chat Style)**
+
+**User:** Idea to run LLMs across multiple personal devices (laptops + Android). Goal is distributed computing for local LLM workloads, mainly for learning and experimentation.
+
+**Assistant:** Asked clarifying questions around goals, workload type, models, Android role, networking, coordination, reuse of existing tools, interfaces, and failure tolerance.
+
+**User:**
+
+* Primary goal: learning and experimentation, not performance
+* Prefer task-level parallelism, then agent-based decomposition
+* Heterogeneous and quantized models are fine
+* Android priority: UI + relay → tool-only → lightweight inference
+* Start on LAN; mobile nodes may be unreliable
+* Prefer existing schedulers/orchestrators
+* Chat UI first, MCP server later
+* Wants architecture + tech stack + explicit reuse guidance
+
+**Assistant:** Proposed a distributed “cognition” architecture (not distributed inference):
+
+* One coordinator node for planning, scheduling, routing, aggregation
+* Laptop workers for inference and tools
+* Android nodes as best-effort UI/relay/tool workers
+* Explicit reuse of Ray, LangGraph, NATS, Redis, ChromaDB, Ollama/LM Studio
+* REST + WebSocket UI, optional MCP server for IDEs
+* Best-effort execution model
+* Phased build plan
+
+**User:** Requested a detailed, no-fluff prompt and implementation plan.
+
+**Assistant:** Delivered a full JSON prompt defining goals, architecture, components, task flow, reuse vs. do-not-build rules, followed by a phased implementation plan from single-coordinator setup to MCP and Android integration.
+
+**User:** Asked for a concise chat-style summary without redundancy.

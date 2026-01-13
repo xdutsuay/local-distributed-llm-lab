@@ -1,0 +1,8 @@
+ray[default]
+langgraph
+redis
+nats-py
+fastapi
+uvicorn
+ollama
+requests

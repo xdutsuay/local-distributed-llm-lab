@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Lab Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
+            background: #f4f4f9;
+            color: #333;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        th,
+        td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #007bff;
+            color: white;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            background: #e0e0e0;
+            color: #555;
+            margin-right: 4px;
+        }
+
+        .badge.model {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .badge.cap {
+            background: #cfe2ff;
+            color: #084298;
+        }
+
+        .refresh-btn {
+            margin-bottom: 15px;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .refresh-btn:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Active Nodes</h1>
+    <button class="refresh-btn" onclick="fetchNodes()">Refresh</button>
+    <table>
+        <thead>
+            <tr>
+                <th>Node ID</th>
+                <th>Model</th>
+                <th>Capabilities</th>
+                <th>Last Seen</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="nodesTable">
+            <tr>
+                <td colspan="5">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchNodes() {
+            try {
+                const response = await fetch('/api/nodes');
+                const data = await response.json();
+                const tbody = document.getElementById('nodesTable');
+                tbody.innerHTML = '';
+
+                const nodes = data.active_nodes;
+                if (Object.keys(nodes).length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5">No active nodes found.</td></tr>';
+                    return;
+                }
+
+                for (const [id, info] of Object.entries(nodes)) {
+                    const row = document.createElement('tr');
+                    const metadata = info.metadata || {};
+                    const model = metadata.model || 'N/A';
+                    const caps = info.capabilities || [];
+
+                    const timeDiff = (Date.now() / 1000) - info.last_seen;
+                    const status = timeDiff < 10 ? '🟢 Active' : '🟡 Stale';
+
+                    row.innerHTML = `
+                        <td><span title="${id}">${id.substring(0, 8)}...</span></td>
+                        <td><span class="badge model">${model}</span></td>
+                        <td>${caps.map(c => `<span class="badge cap">${c}</span>`).join('')}</td>
+                        <td>${new Date(info.last_seen * 1000).toLocaleTimeString()}</td>
+                        <td>${status}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Auto refresh
+        fetchNodes();
+        setInterval(fetchNodes, 5000);
+    </script>
+</body>
+
+</html>

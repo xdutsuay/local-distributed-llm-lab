@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Lab Node</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status {
+            font-weight: bold;
+            color: #666;
+        }
+
+        .status.connected {
+            color: green;
+        }
+
+        .status.disconnected {
+            color: red;
+        }
+
+        #log {
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>LLM Lab Worker</h1>
+        <p>Status: <span id="status" class="status">Disconnected</span></p>
+        <p>Node ID: <span id="nodeId">Generating...</span></p>
+        <p>Device: <span id="deviceInfo">...</span></p>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        function uuidv4() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        const nodeId = uuidv4();
+        document.getElementById('nodeId').textContent = nodeId;
+        document.getElementById('deviceInfo').textContent = navigator.userAgent;
+
+        const logDiv = document.getElementById('log');
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logDiv.prepend(div);
+        }
+
+        function connect() {
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${proto}//${window.location.host}/ws/join`;
+
+            log(`Connecting to ${wsUrl}...`);
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'status connected';
+                log('WebSocket Connected');
+
+                // Send handshake / initial heartbeat
+                const msg = {
+                    type: "heartbeat",
+                    node_id: nodeId,
+                    capabilities: ["web_worker", "browser_tool"],
+                    model: "web_slm",
+                    timestamp: Date.now() / 1000
+                };
+                ws.send(JSON.stringify(msg));
+
+                // Start heartbeat loop
+                setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        msg.timestamp = Date.now() / 1000;
+                        ws.send(JSON.stringify(msg));
+                    }
+                }, 5000);
+            };
+
+            ws.onmessage = (event) => {
+                log(`Received: ${event.data}`);
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status disconnected';
+                log('Disconnected. Retrying in 3s...');
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WS Error", err);
+                ws.close();
+            };
+        }
+
+        connect();
+    </script>
+</body>
+
+</html>
