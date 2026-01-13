@@ -89,24 +89,33 @@ class LLMWorker:
                 {'role': 'user', 'content': prompt},
             ])
             resp = response['message']['content']
-            self.generated_bytes += len(resp.encode('utf-8'))
-            self.last_task = "Idle"
-            return resp
+            # Return rich object
+            return {
+                "content": resp,
+                "node_id": self.node_id,
+                "model": self.model_name,
+                "timestamp": time.time()
+            }
             
         except Exception as e:
             error_str = str(e)
             if "not found" in error_str or "pull" in error_str:
-                print(f"Model {self.model_name} not found. Attempting to pull...")
-                try:
+                # ... (keep existing retry logic, but wrap return)
+                try: 
                     ollama.pull(self.model_name)
                     # Retry once
                     response = ollama.chat(model=self.model_name, messages=[
-                        {'role': 'user', 'content': prompt},
+                         {'role': 'user', 'content': prompt},
                     ])
                     resp = response['message']['content']
                     self.generated_bytes += len(resp.encode('utf-8'))
                     self.last_task = "Idle"
-                    return resp
+                    return {
+                        "content": resp,
+                        "node_id": self.node_id,
+                        "model": self.model_name,
+                        "timestamp": time.time()
+                    }
                 except Exception as pull_error:
                     print(f"Pull failed: {pull_error}")
 
@@ -116,7 +125,12 @@ class LLMWorker:
             self.generated_bytes += len(resp.encode('utf-8'))
             await asyncio.sleep(2)
             self.last_task = "Idle"
-            return resp
+            return {
+                "content": resp,
+                "node_id": self.node_id,
+                "model": self.model_name,
+                "timestamp": time.time()
+            }
 
 if __name__ == "__main__":
     import argparse

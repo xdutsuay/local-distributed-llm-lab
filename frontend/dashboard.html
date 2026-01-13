@@ -279,6 +279,11 @@
             }
         }
 
+        // Initial load
+        fetchNodes();
+
+        // Auto-refresh every 2 seconds
+        setInterval(fetchNodes, 2000);
     </script>
 </body>
 

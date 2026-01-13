@@ -12,6 +12,7 @@ class AgentState(TypedDict):
     plan: List[Dict[str, Any]]
     results: Annotated[List[str], operator.add]
     current_step_index: int
+    worker: str # Track last worker ID
 
 class WorkflowManager:
     def __init__(self):
@@ -66,12 +67,23 @@ class WorkflowManager:
                  
             try:
                 response_ref = self.worker.generate.remote(prompt)
-                result = ray.get(response_ref)
+                raw_result = ray.get(response_ref)
+                
+                # Parse Result
+                if isinstance(raw_result, dict):
+                    result = raw_result.get("content", "")
+                    self.last_worker_id = raw_result.get("node_id", "unknown")
+                else:
+                    result = str(raw_result)
+                    self.last_worker_id = "legacy-worker"
+                    
             except Exception as e:
                 result = f"Error: {str(e)}"
+                self.last_worker_id = "error"
             
             return {
                 "results": [result], 
+                "worker": self.last_worker_id, # Add tracker to state
                 "current_step_index": idx + 1
             }
         return {}
