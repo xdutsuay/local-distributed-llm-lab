@@ -57,8 +57,19 @@ A powerful Planner LLM decomposes complex queries into subtasks, which are then 
     *   Open `http://192.168.1.5:8000` on your phone's browser.
     *   Watch it appear in the dashboard!
 
-## 🧪 dashboard
-Visit `http://localhost:8000/nodes` to see active nodes and their capabilities in real-time.
+## 🧪 Dashboard
+Visit `http://localhost:8000/llmlab` to visualize the cluster, track task history, and inspect execution routes.
+
+![Dashboard Task History](assets/dashboard_task_history.png)
+
+## 🔌 Connect Remote Node (LM Studio)
+You can connect a second laptop running **LM Studio** as a worker node:
+1. Start LM Studio Server on Laptop 2 (Port 1234).
+2. Update `coordinator/main.py` to spawn a worker pointing to Laptop 2's IP.
+   ```python
+   LLMWorker.remote(model_name="local-model", api_base="http://192.168.1.X:1234/v1")
+   ```
+3. The new worker will appear in the dashboard! (See [docs/CONNECT_REMOTE.md](docs/CONNECT_REMOTE.md) for details).
 
 ## 🗺 Roadmap
 - [x] **Phase 0-1**: Basic distributed execution (Ray).

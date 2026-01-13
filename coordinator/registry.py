@@ -37,3 +37,13 @@ class NodeRegistry:
             del self.nodes[nid]
             
         return active
+        
+    async def perform_health_check(self):
+        print(" Performing Smart Health Check...")
+        active = self.get_active_nodes()
+        if not active:
+            print("⚠️ ALERT: No active nodes found via Heartbeat!")
+        else:
+            print(f"✅ Active Nodes: {len(active)}")
+            for nid, data in active.items():
+                print(f"   - {nid} (Last seen {time.time() - data['last_seen']:.1f}s ago)")

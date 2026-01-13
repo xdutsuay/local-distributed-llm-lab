@@ -147,22 +147,35 @@
             chat.appendChild(typingDiv);
 
             try {
+                // Client Identity
+                let clientId = localStorage.getItem('llm_client_id');
+                if (!clientId) {
+                    clientId = 'web-' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('llm_client_id', clientId);
+                }
+
                 const res = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: text })
+                    body: JSON.stringify({ 
+                        prompt: text,
+                        client_id: clientId
+                    })
                 });
                 const data = await res.json();
 
                 chat.removeChild(typingDiv);
 
-                if (data.plan && data.plan.length > 0) {
-                    appendPlan(data.plan);
-                }
+                // User requested to hide logs/plan
+                // if (data.plan && data.plan.length > 0) {
+                //    appendPlan(data.plan);
+                // }
+                console.log("Plan:", data.plan); // Keep in console for debug
 
                 let answer = data.response;
                 if (Array.isArray(answer)) {
-                    answer = answer.join('\n\n');
+                    // Show only the last response (final answer)
+                    answer = answer[answer.length - 1];
                 } else if (typeof answer === 'object') {
                     answer = JSON.stringify(answer, null, 2);
                 }

@@ -57,15 +57,21 @@ async def websocket_endpoint(websocket: WebSocket):
 
 class ChatRequest(BaseModel):
     prompt: str
+    client_id: str = "unknown"
     model: str = "llama3.2"
 
 @app.get("/api/nodes")
 async def get_nodes_json():
     return {"active_nodes": registry.get_active_nodes()}
 
+@app.get("/llmlab")
+async def get_dashboard():
+    return FileResponse('frontend/dashboard.html')
+
 @app.get("/nodes")
 async def get_nodes_html():
-    return FileResponse('frontend/nodes.html')
+    # Backward compatibility / Redirect
+    return FileResponse('frontend/dashboard.html')
 
 @app.get("/chat_ui")
 async def get_chat_ui():
@@ -78,14 +84,30 @@ async def chat(request: ChatRequest):
         # Route task through LangGraph
         result = await workflow_manager.invoke(request.prompt)
         
+        # Parse plan for route details
+        plan = result.get("plan", [])
+        route_summary = f"{len(plan)} Steps"
+        route_details = [
+            {"step": s.get("step_id"), "desc": s.get("description"), "node": s.get("worker_type")} 
+            for s in plan
+        ]
+        
+        final_node = "Distributed"
+        if plan:
+            final_node = plan[-1].get("worker_type", "Unknown")
+
         # Log task
         task_entry = {
             "id": str(uuid.uuid4()),
+            "client_id": request.client_id,
             "prompt": request.prompt,
             "status": "Success",
             "timestamp": start_time,
             "duration": time.time() - start_time,
-            "plan_steps": len(result.get("plan", [])),
+            "plan_steps": len(plan),
+            "route_summary": route_summary,
+            "route_details": route_details,
+            "final_node": final_node,
             "worker": result.get("worker", "unknown")
         }
         task_history.insert(0, task_entry)
@@ -93,6 +115,13 @@ async def chat(request: ChatRequest):
         if len(task_history) > 100:
             task_history.pop()
             
+        response_content = result["results"]
+        # Smart Health Check Trigger
+        if isinstance(response_content, list) and len(response_content) > 0:
+            if "[Mock]" in response_content[0]:
+                print("⚠️ Mock response detected. Triggering Health Check.")
+                asyncio.create_task(registry.perform_health_check())
+
         return {
             "response": result["results"], 
             "plan": result["plan"],
