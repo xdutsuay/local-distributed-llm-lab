@@ -14,7 +14,8 @@ import uuid
 app = FastAPI(title="LLM Lab Coordinator")
 
 # Initialize Ray (suppress error if already running)
-ray.init(ignore_reinit_error=True)
+# We MUST use a fixed namespace so workers can find actors
+ray.init(address="auto", namespace="llm-lab", ignore_reinit_error=True)
 
 # Globals
 workflow_manager = WorkflowManager()

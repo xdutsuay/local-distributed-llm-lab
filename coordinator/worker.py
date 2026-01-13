@@ -138,12 +138,12 @@ if __name__ == "__main__":
     if args.address:
         print(f"Connecting to Ray Cluster at {args.address}...")
         try:
-            ray.init(address=args.address, ignore_reinit_error=True)
+            ray.init(address=args.address, namespace="llm-lab", ignore_reinit_error=True)
         except Exception as e:
              print(f"Connection failed: {e}")
-             ray.init(address='auto', ignore_reinit_error=True)
+             ray.init(address='auto', namespace="llm-lab", ignore_reinit_error=True)
     else:
-        ray.init(address='auto')
+        ray.init(address='auto', namespace="llm-lab", ignore_reinit_error=True)
         
     current_ip = ray.util.get_node_ip_address()
     print(f"Targeting Local Node IP: {current_ip}")
