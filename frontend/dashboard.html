@@ -205,6 +205,9 @@
                     const route = task.route_summary || (task.plan_steps + ' Steps');
                     const finalNode = task.final_node || '-';
 
+                    // Truncate Node ID for cleaner UI
+                    const shortNode = finalNode.includes('-') ? finalNode.split('-').pop() : finalNode;
+
                     // Store full task for modal
                     const taskStr = JSON.stringify(task).replace(/"/g, '&quot;');
 
@@ -213,7 +216,7 @@
                         <td><small>${source}</small></td>
                         <td>${task.prompt.substring(0, 30)}${task.prompt.length > 30 ? '...' : ''}</td>
                         <td style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showDetails(${taskStr})">${route}</td>
-                        <td>${finalNode}</td>
+                        <td><span title="${finalNode}">${shortNode}</span></td>
                         <td><span class="badge" style="background:${statusColor}">${task.status}</span></td>
                         <td>${dur}</td>
                     `;

@@ -93,9 +93,28 @@ async def chat(request: ChatRequest):
             for s in plan
         ]
         
+        # Parse trace for composition
+        trace = result.get("execution_trace", [])
+        composition = {}
+        total_time = 0
+        for step in trace:
+            nid = step.get("node_id", "unknown")
+            dur = step.get("duration", 0)
+            composition[nid] = composition.get(nid, 0) + dur
+            total_time += dur
+            
+        # Format composition as string "NodeA(60%), NodeB(40%)"
+        comp_str = "Single Node"
+        if total_time > 0:
+            parts = []
+            for nid, dur in composition.items():
+                pct = int((dur / total_time) * 100)
+                parts.append(f"{nid.split('-')[-1]}:{pct}%")
+            comp_str = ", ".join(parts)
+            
         final_node = "Distributed"
-        if plan:
-            final_node = plan[-1].get("worker_type", "Unknown")
+        if trace:
+            final_node = trace[-1].get("node_id", "Unknown")
 
         # Log task
         task_entry = {
@@ -106,10 +125,11 @@ async def chat(request: ChatRequest):
             "timestamp": start_time,
             "duration": time.time() - start_time,
             "plan_steps": len(plan),
-            "route_summary": route_summary,
-            "route_details": route_details,
+            "route_summary": comp_str if len(composition) > 1 else (plan[-1].get("worker_type") if plan else "Planner"),
+            "route_details": trace if trace else route_details,
             "final_node": final_node,
-            "worker": result.get("worker", "unknown")
+            "worker": result.get("worker", "unknown"),
+            "composition": composition # Raw dict for frontend charts
         }
         task_history.insert(0, task_entry)
         # Keep only last 100

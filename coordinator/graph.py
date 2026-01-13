@@ -5,6 +5,7 @@ import operator
 import ray
 from coordinator.planner import Planner
 from coordinator.worker import LLMWorker
+import time
 
 # Define the state of the graph
 class AgentState(TypedDict):
@@ -13,6 +14,7 @@ class AgentState(TypedDict):
     results: Annotated[List[str], operator.add]
     current_step_index: int
     worker: str # Track last worker ID
+    execution_trace: Annotated[List[Dict[str, Any]], operator.add] # Detailed trace of execution
 
 class WorkflowManager:
     def __init__(self):
@@ -66,8 +68,10 @@ class WorkflowManager:
                  prompt = step["payload"]["query"]
                  
             try:
+                start_exec = time.time()
                 response_ref = self.worker.generate.remote(prompt)
                 raw_result = ray.get(response_ref)
+                duration = time.time() - start_exec
                 
                 # Parse Result
                 if isinstance(raw_result, dict):
@@ -80,11 +84,21 @@ class WorkflowManager:
             except Exception as e:
                 result = f"Error: {str(e)}"
                 self.last_worker_id = "error"
+                duration = 0
             
+            trace_entry = {
+                "step": idx + 1,
+                "description": step['description'],
+                "node_id": self.last_worker_id,
+                "duration": duration,
+                "timestamp": time.time()
+            }
+
             return {
                 "results": [result], 
-                "worker": self.last_worker_id, # Add tracker to state
-                "current_step_index": idx + 1
+                "worker": self.last_worker_id,
+                "current_step_index": idx + 1,
+                "execution_trace": [trace_entry]
             }
         return {}
 
@@ -94,7 +108,7 @@ class WorkflowManager:
         return "end"
 
     async def run(self, query: str):
-        inputs = {"user_query": query, "results": [], "current_step_index": 0}
+        inputs = {"user_query": query, "results": [], "current_step_index": 0, "execution_trace": []}
         # Using a fixed thread_id for this simple phase
         config = {"configurable": {"thread_id": "1"}}
         
@@ -104,22 +118,10 @@ class WorkflowManager:
                 print(f"Finished {key}: {value.keys()}")
                 final_state = value # Keep tracking the latest state updates
         
-        # The 'event' in stream is a dict of node_name -> state_update
-        # We need to get the final accumulated state if possible, or just build it
-        # Actually LangGraph stream returns the updates. 
-        # For simplicity, let's just return the accumulated results from the final outputs
-        # But since 'results' is annotated with operator.add, we might need to access the snapshot if we want full history?
-        # For now, let's just assume the last state update has the info we need or we return a summary.
-        
-        # Better: use invoke if we don't need streaming updates
-        # result = await self.workflow.ainvoke(inputs, config=config)
-        # return result
-        
-        # But we used stream loop above. 
-        return "Workflow completed." # We'll modify run to return meaningful data
+        return "Workflow completed."
         
     async def invoke(self, query: str):
-        inputs = {"user_query": query, "results": [], "current_step_index": 0}
+        inputs = {"user_query": query, "results": [], "current_step_index": 0, "execution_trace": []}
         config = {"configurable": {"thread_id": "1", "checkpoint_ns": "checkpoints"}}
         
         result = await self.workflow.ainvoke(inputs, config=config)

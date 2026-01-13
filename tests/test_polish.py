@@ -37,3 +37,8 @@ async def test_task_attribution_fields():
     latest = tasks[-1]
     assert "worker" in latest
     assert "final_node" in latest
+    # New Phase 10 fields
+    if "execution_trace" in latest:
+        assert isinstance(latest["execution_trace"], list)
+    if "composition" in latest:
+         assert isinstance(latest["composition"], dict)
