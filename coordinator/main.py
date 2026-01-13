@@ -144,3 +144,28 @@ async def get_tasks():
 @app.get("/health")
 def health():
     return {"status": "ok", "ray_status": ray.is_initialized()}
+
+# --- Shared Clipboard / Memo ---
+memo_storage = []
+
+class MemoRequest(BaseModel):
+    text: str
+
+@app.get("/memo")
+async def get_memo_ui():
+    return FileResponse('frontend/memo.html')
+
+@app.get("/api/memo")
+async def get_memos():
+    return {"memos": memo_storage}
+
+@app.post("/api/memo")
+async def add_memo(req: MemoRequest):
+    memo_storage.insert(0, {
+        "text": req.text, 
+        "time": time.strftime("%H:%M:%S")
+    })
+    if len(memo_storage) > 50: 
+        memo_storage.pop()
+    return {"status": "ok"}
+
