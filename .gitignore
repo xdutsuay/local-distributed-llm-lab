@@ -1,6 +1,7 @@
 venv/
 __pycache__/
 *.pyc
+.DS_Store
 .env
 
 # Logs
@@ -9,7 +10,4 @@ ollama.log
 
 # Generated data
 server_data/
-.pytest_cache/DS_Store
-.env
 .pytest_cache/
-*.log
