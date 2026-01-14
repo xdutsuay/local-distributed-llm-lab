@@ -22,8 +22,9 @@ class RayMessageBus:
 
 @ray.remote
 class LLMWorker:
-    def __init__(self, model_name: str = "llama3.2", api_base: str = None):
-        self.model_name = model_name
+    def __init__(self, model_name: str = None, api_base: str = None):
+        import os
+        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.2")
         self.api_base = api_base  # e.g., "http://192.168.1.5:1234/v1"
         self.node_id = f"worker-{uuid.getnode()}"
         self.bus = None

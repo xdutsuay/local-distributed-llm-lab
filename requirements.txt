@@ -7,4 +7,4 @@ uvicorn
 ollama
 requests
 websockets
-mcpts
+

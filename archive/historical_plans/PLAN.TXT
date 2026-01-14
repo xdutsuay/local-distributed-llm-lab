@@ -54,3 +54,31 @@ EXIT CRITERIA
 - Planner-driven decomposition working
 - MCP integration functional
 - Android nodes participating in at least relay mode
+
+---
+[ROLLBACK & IMPACT REPORT]
+Date: Tue Jan 13 16:35:45 IST 2026
+
+Features Removed (Stashed) during Phase 9-12 Rollback:
+
+1. Phase 10: Dynamic Routing
+   - Gone: Routes /web, /node, /chat_ui, /llmlab.
+   - Gone: Files web_client.html, worker_node.html, web_worker.html.
+   - Reverted: main.py is monolithic again.
+
+2. Phase 10: Discovery & Startup
+   - Gone: start_cluster.py (Smart Leader Election / Unified CLI).
+   - Gone: coordinator/discovery.py (UDP Beacon).
+
+3. Phase 11: Data Persistence
+   - Gone: coordinator/persistence.py.
+   - Gone: task_history persistence to history.json.
+
+4. Phase 12: Unified Architecture
+   - Gone: LLM_ROLE logic (Worker vs Coordinator mode).
+   - Gone: /api/config endpoint (Dynamic WebSocket URL).
+
+Current State:
+- Back to 'Phase 9' state.
+- main.py runs on localhost:8000.
+- Manual 'ray start' required for workers.
