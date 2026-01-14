@@ -3,84 +3,135 @@
 **A distributed cognition framework for local AI experiments.**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
-![Status](https://img.shields.io/badge/status-experimental-orange.svg)
+![Python](https://img.shields.io/badge/python-3.12.2-blue.svg)
+![Status](https://img.shields.io/badge/status-active-green.svg)
+![Tests](https://img.shields.io/badge/tests-27%2F43%20passing-green.svg)
 
 ## 🚀 Overview
-**Local Distributed LLM Lab** orchestrates multiple local devices—laptops, desktops, and mobile phones—into a single collaborative AI cluster. Instead of simply sharding model weights (like tensor parallelism), it focuses on **task-level parallelism** and **heterogeneous agents**.
+**Local Distributed LLM Lab** orchestrates multiple local devices—laptops, desktops, and mobile phones—into a single collaborative AI cluster. Instead of sharding model weights, it focuses on **task-level parallelism** and **heterogeneous agents**.
 
-A powerful Planner LLM decomposes complex queries into subtasks, which are then routed to the most appropriate worker node (e.g., a high-RAM laptop for inference, a phone for simple tool execution).
+A Planner LLM decomposes complex queries into subtasks, which are routed to the most appropriate worker node.
 
-## ✨ Features
-- **Distributed Coordination**: Powered by **Ray** and **FastAPI**.
-- **Agentic Workflow**: Task decomposition using **LangGraph** & **Ollama**.
-- **Mobile Integration**: Turn your Android/iOS device into a worker node via a simple PWA.
-- **Auto-Discovery**: Nodes automatically register capabilities via a decentralized heartbeating mechanism.
-- **Resilient**: "Best-effort" execution design tolerates node failures.
+## ✨ Current Features
+
+### Core Capabilities
+- ✅ **Distributed Coordination** - Powered by Ray and FastAPI
+- ✅ **Multi-Node Support** - macOS ↔ Windows cross-platform
+- ✅ **Task Attribution** - Track which node processed each task
+- ✅ **Heartbeat System** - Auto-registration and TTL expiration
+- ✅ **Agentic Workflow** - LangGraph task decomposition
+- ✅ **Test Coverage** - 43 tests (27 passing, 16 future stubs)
+
+### Interfaces
+- 📊 **Dashboard** (`/llmlab`) - Real-time cluster status
+- 💬 **Chat UI** (`/chat_ui`) - Query interface
+- 📋 **Shared Clipboard** (`/memo`) - Cross-machine text transfer
 
 ## 🏗 Architecture
-1.  **Coordinator Node**: The brain. Runs the API, Planner, and Task Graph.
-2.  **Worker Nodes**:
-    *   **Ray Workers**: Python-based, capable of heavy inference (Llama 3, Mistral).
-    *   **Mobile Workers**: WebSocket-based, capable of light tasks (SLMs like Gemma-2b, or simple tools).
-3.  **Communication**: Event bus for heartbeats and task routing.
 
-## 🛠 Installation
+```
+┌─────────────────────────────────────────────┐
+│         Coordinator Node (Mac)              │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐ │
+│  │ FastAPI  │  │ LangGraph│  │Ray Head   │ │
+│  │ Planner  │  │ Workflow │  │Registry   │ │
+│  └──────────┘  └──────────┘  └───────────┘ │
+└─────────────────────────────────────────────┘
+           │                    │
+    Heartbeats (5s)      Task Distribution
+           │                    │
+    ┌──────┴────────┬───────────┴──────┐
+    │               │                  │
+┌───▼────┐    ┌────▼─────┐    ┌───────▼────┐
+│Worker 1│    │ Worker 2 │    │ Mobile PWA │
+│(Ollama)│    │ (Ollama) │    │ (planned)  │
+└────────┘    └──────────┘    └────────────┘
+```
+
+## 🛠 Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- [Ollama](https://ollama.com/) (running locally)
-- [Redis](https://redis.io/) (Optional, for production persistence)
+- Python 3.12.2
+- [Ollama](https://ollama.com/) running locally
+- Ray 2.53.0+
 
-### Quick Start
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/xdutsuay/local-distributed-llm-lab.git
-    cd local-distributed-llm-lab
-    ```
+### Installation
+```bash
+git clone https://github.com/xdutsuay/local-distributed-llm-lab.git
+cd local-distributed-llm-lab
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-2.  **Install dependencies**:
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-    ```
+### Start Coordinator (Machine 1)
+```bash
+./scripts/start_coordinator.sh
+# Dashboard: http://localhost:8000/llmlab
+```
 
-3.  **Start the Coordinator**:
-    ```bash
-    # Listen on all interfaces to allow mobile connections
-    uvicorn coordinator.main:app --host 0.0.0.0 --port 8000
-    ```
+### Connect Worker (Machine 2)
+```bash
+./scripts/start_worker.sh <COORDINATOR_IP>
+```
 
-4.  **Connect a Mobile Node**:
-    *   Find your LAN IP (e.g., `192.168.1.5`).
-    *   Open `http://192.168.1.5:8000` on your phone's browser.
-    *   Watch it appear in the dashboard!
+### Health Check
+```bash
+python scripts/health_check.py
+```
 
-## 🧪 Dashboard
-Visit `http://localhost:8000/llmlab` to visualize the cluster, track task history, and inspect execution routes.
+## 🧪 Testing
+```bash
+# All tests
+python -m pytest tests/
 
-![Dashboard Task History](assets/dashboard_task_history.png)
+# Active tests only
+python -m pytest tests/ -k "not skip"
+```
 
-## 🔌 Connect Remote Node (LM Studio)
-You can connect a second laptop running **LM Studio** as a worker node:
-1. Start LM Studio Server on Laptop 2 (Port 1234).
-2. Update `coordinator/main.py` to spawn a worker pointing to Laptop 2's IP.
-   ```python
-   LLMWorker.remote(model_name="local-model", api_base="http://192.168.1.X:1234/v1")
-   ```
-3. The new worker will appear in the dashboard! (See [docs/CONNECT_REMOTE.md](docs/CONNECT_REMOTE.md) for details).
+## 📁 Project Structure
+```
+LLMLAB/
+├── coordinator/      # Core orchestration (main, graph, worker, registry)
+├── frontend/         # HTML/JS interfaces  
+├── tests/           # 43 tests (routes, heartbeat, cluster, etc.)
+├── scripts/         # Startup & diagnostic utilities
+├── config/          # Configuration files
+├── docs/            # Documentation
+└── archive/         # Historical files
+```
 
 ## 🗺 Roadmap
-- [x] **Phase 0-1**: Basic distributed execution (Ray).
-- [x] **Phase 2**: Planner & DAG orchestration (LangGraph).
-- [x] **Phase 3**: Node Registry & Health monitoring.
-- [x] **Phase 4**: Android PWA Integration.
-- [ ] **Phase 5**: MCP Server Integration (Use with Cursor/VSCode).
-- [ ] **Phase 6**: Observability & Metrics.
+
+### Completed
+- [x] Multi-node distributed execution
+- [x] LangGraph task orchestration
+- [x] Node registry & health monitoring
+- [x] Task attribution & composition
+- [x] Comprehensive test suite
+
+### In Progress (Phase 10)
+- [ ] Fix prompt passing bug
+- [ ] Round-robin load balancing
+- [ ] Auto-detect Ollama model
+
+### Planned
+- [ ] **Phase 11**: Mobile mesh (tools, caching, replication)
+- [ ] **Phase 12**: Observability (timeline, metrics)
+
+## 🔧 Configuration
+
+### Environment Variables
+```bash
+export OLLAMA_MODEL=llama3.2  # Or mistral, gemma:2b, etc.
+export RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1
+```
+
+### Ray Namespace
+All nodes must connect to namespace: `llm-lab`
 
 ## 🤝 Contributing
-Contributions are welcome! Please open an issue or submit a PR.
+Contributions welcome! See active issues and test coverage in `tests/`.
 
 ## 📜 License
 MIT License.
