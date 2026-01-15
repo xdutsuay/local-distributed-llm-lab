@@ -109,6 +109,72 @@
         .tab-content.active {
             display: block;
         }
+
+        /* Modal & Actions */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 500px;
+            max-width: 90%;
+        }
+
+        .verification-log {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 4px;
+            height: 150px;
+            overflow-y: auto;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        .btn-action {
+            padding: 4px 8px;
+            font-size: 0.8em;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            background: white;
+        }
+
+        .btn-action:hover {
+            background: #f0f0f0;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -126,14 +192,15 @@
         <table>
             <thead>
                 <tr>
-                    <th>Node ID</th>
-                    <th>Address</th>
+                    <th>Node IP (Physical)</th>
+                    <th>Primary ID</th>
                     <th>Model</th>
                     <th>Capabilities</th>
                     <th>Contributed</th>
-                    <th>Task</th>
+                    <th>Task Status</th>
                     <th>Last Seen</th>
                     <th>Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="nodesTable">
@@ -167,13 +234,34 @@
         </table>
     </div>
 
-    <!-- Details Modal -->
     <div id="detailsModal"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5);">
         <div style="background:white; margin: 10% auto; padding:20px; width:50%; border-radius:8px;">
             <h2>Task Details</h2>
             <pre id="modalContent" style="background:#eee; padding:10px; overflow:auto; max-height:400px;"></pre>
             <button onclick="document.getElementById('detailsModal').style.display='none'">Close</button>
+        </div>
+    </div>
+
+    <!-- Swap Model Modal -->
+    <div id="swapModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Swap Model</h2>
+            <p id="swapTargetNode" style="font-weight:bold; color:#666;"></p>
+
+            <div style="margin: 20px 0;">
+                <label>Select Model:</label>
+                <select id="modelSelect" style="width:100%; padding:8px; margin-top:5px;">
+                    <option>Loading...</option>
+                </select>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn-secondary" onclick="closeSwapModal()">Cancel</button>
+                <button class="btn-primary" id="confirmSwapBtn" onclick="executeSwap()">Swap & Verify</button>
+            </div>
+
+            <div id="swapLog" class="verification-log"></div>
         </div>
     </div>
 
@@ -255,30 +343,150 @@
                     return;
                 }
 
+                // Group by IP
+                const nodesByIp = {};
                 for (const [id, info] of Object.entries(nodes)) {
-                    const row = document.createElement('tr');
-                    const metadata = info.metadata || {};
-                    const model = metadata.model || 'N/A';
-                    const caps = info.capabilities || [];
-                    const stats = metadata.data_stats || { sent_bytes: 0 };
+                    const ip = info.metadata.client_ip || 'Local';
+                    if (!nodesByIp[ip]) nodesByIp[ip] = [];
+                    nodesByIp[ip].push({ id, ...info });
+                }
 
-                    const timeDiff = (Date.now() / 1000) - info.last_seen;
+                for (const [ip, nodeList] of Object.entries(nodesByIp)) {
+                    // Determine representative data
+                    // Prefer showing the Coordinator or the first Worker
+                    const primary = nodeList.find(n => n.capabilities.includes('coordinator')) || nodeList[0];
+                    const count = nodeList.length;
+
+                    const row = document.createElement('tr');
+                    const metadata = primary.metadata || {};
+                    const model = metadata.model || 'N/A';
+
+                    // Merge capabilities
+                    const allCaps = new Set();
+                    nodeList.forEach(n => (n.capabilities || []).forEach(c => allCaps.add(c)));
+
+                    // Merge tasks
+                    const activeTasks = nodeList.filter(n => n.metadata.current_task && n.metadata.current_task !== 'Idle');
+                    const taskSummary = activeTasks.length > 0
+                        ? `${activeTasks.length} Active Task(s)`
+                        : 'Idle';
+
+                    const stats = metadata.data_stats || { sent_bytes: 0 }; // Just take primary
+                    const timeDiff = (Date.now() / 1000) - primary.last_seen;
                     const status = timeDiff < 10 ? '🟢 Active' : '🟡 Stale';
 
+                    // Check if ANY node on this IP is Ray/Ollama capable
+                    const rayNode = nodeList.find(n => n.capabilities.includes('llm_inference') || n.id.startsWith('worker-'));
+                    const isRay = !!rayNode;
+                    const targetId = rayNode ? rayNode.id : primary.id;
+
                     row.innerHTML = `
-                        <td><span title="${id}" style="font-family:monospace">${id.split('-').pop()}</span></td>
-                        <td>${metadata.client_ip || 'Local'}</td>
+                        <td>
+                            <span style="font-weight:bold;">${ip}</span>
+                            <br><span style="font-size:0.8em; color:#666;">${count} Process(es)</span>
+                        </td>
+                        <td>${primary.id.substring(0, 8)}...</td>
                         <td><span class="badge model">${model}</span></td>
-                        <td>${caps.map(c => `<span class="badge cap">${c}</span>`).join('')}</td>
+                        <td>${Array.from(allCaps).map(c => `<span class="badge cap">${c}</span>`).join('')}</td>
                         <td>${formatBytes(stats.sent_bytes)}</td>
-                        <td><small>${metadata.current_task || 'Idle'}</small></td>
-                        <td>${new Date(info.last_seen * 1000).toLocaleTimeString()}</td>
+                        <td><small>${taskSummary}</small></td>
+                        <td>${new Date(primary.last_seen * 1000).toLocaleTimeString()}</td>
                         <td>${status}</td>
+                        <td>
+                            ${isRay ? `
+                                <button class="btn-action" onclick="openSwapModal('${targetId}')">Manage Model</button>
+                                <button class="btn-action" style="color:red; border-color:red;" onclick="restartNode('${targetId}')">Restart</button>
+                            ` : '-'}
+                        </td>
                     `;
                     tbody.appendChild(row);
                 }
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        // --- Swap & Restart Logic (Global Scope) ---
+        let currentNodeId = null;
+
+        async function openSwapModal(nodeId) {
+            console.log("Opening swap modal for:", nodeId);
+            currentNodeId = nodeId;
+            const modal = document.getElementById('swapModal');
+            if (!modal) { console.error("Modal not found!"); return; }
+
+            modal.style.display = 'flex';
+            document.getElementById('swapTargetNode').textContent = `Target: ${nodeId}`;
+            document.getElementById('swapLog').style.display = 'none';
+            document.getElementById('swapLog').textContent = '';
+            document.getElementById('confirmSwapBtn').disabled = false;
+
+            const select = document.getElementById('modelSelect');
+            select.innerHTML = '<option>Loading...</option>';
+            select.disabled = true;
+
+            try {
+                const res = await fetch(`/api/nodes/${nodeId}/models`);
+                if (!res.ok) throw new Error("Failed to fetch models: " + res.statusText);
+                const data = await res.json();
+
+                select.innerHTML = '';
+                (data.models || []).forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.textContent = m;
+                    select.appendChild(opt);
+                });
+                select.disabled = false;
+            } catch (e) {
+                console.error("Error loading models:", e);
+                select.innerHTML = `<option>Error: ${e.message}</option>`;
+            }
+        }
+
+        async function restartNode(nodeId) {
+            if (!confirm(`Are you sure you want to RESTART node ${nodeId}?`)) return;
+            try {
+                const res = await fetch(`/api/nodes/${nodeId}/restart`, { method: 'POST' });
+                const data = await res.json();
+                alert(data.message || "Restart signal sent.");
+                fetchNodes();
+            } catch (e) {
+                alert("Error restarting node: " + e);
+            }
+        }
+
+        function closeSwapModal() {
+            document.getElementById('swapModal').style.display = 'none';
+        }
+
+        async function executeSwap() {
+            const model = document.getElementById('modelSelect').value;
+            const logDiv = document.getElementById('swapLog');
+            const btn = document.getElementById('confirmSwapBtn');
+
+            logDiv.style.display = 'block';
+            logDiv.textContent = `> Requesting swap to ${model}...\n`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`/api/nodes/${currentNodeId}/model`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: model })
+                });
+
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    logDiv.textContent += `> Success\n> Verification Output:\n${data.verification || '(No output)'}\n`;
+                    fetchNodes(); // Refresh table
+                } else {
+                    logDiv.textContent += `> Error: ${data.error || 'Unknown error'}`;
+                }
+            } catch (e) {
+                logDiv.textContent += `> Network Error: ${e}`;
+            } finally {
+                btn.disabled = false;
             }
         }
 

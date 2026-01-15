@@ -27,11 +27,17 @@ class WorkerPool:
         print(f"🔧 Initializing Worker Pool with {num_workers} workers...")
         
         # Create worker instances
+        import uuid
         for i in range(num_workers):
             try:
-                worker = LLMWorker.remote()
+                # Generate unique ID for the worker
+                worker_id = f"worker-{str(uuid.uuid4())[:8]}"
+                
+                # Create named actor so we can retrieve it by name later
+                worker = LLMWorker.options(name=worker_id).remote(node_id=worker_id)
+                
                 self.workers.append(worker)
-                print(f"  ✓ Worker {i+1}/{num_workers} created")
+                print(f"  ✓ Worker {i+1}/{num_workers} created ({worker_id})")
             except Exception as e:
                 print(f"  ✗ Failed to create worker {i+1}: {e}")
         

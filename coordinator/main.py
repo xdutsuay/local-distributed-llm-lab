@@ -13,6 +13,7 @@ import json
 import time
 import uuid
 import socket
+from coordinator.profiler import profile
 
 app = FastAPI(title="LLM Lab Coordinator")
 
@@ -169,6 +170,7 @@ async def get_chat_ui():
     return FileResponse('frontend/chat.html')
 
 @app.post("/chat")
+@profile
 async def chat(request: ChatRequest):
     try:
         start_time = time.time()
@@ -354,7 +356,77 @@ async def clear_cache():
     from coordinator.cache_manager import get_cache_manager
     cache = get_cache_manager()
     cache.clear()
-    return {"status": "ok", "message": "Cache cleared"}
+    return {"status": "cleared"}
+
+# --- Model Management API (Phase 17) ---
+@app.get("/api/nodes/{node_id}/models")
+async def list_node_models(node_id: str):
+    """List available models on a specific node"""
+    try:
+        # Special handling for coordinator (not a Ray actor)
+        if "coordinator" in node_id:
+            import subprocess
+            result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                models = [line.split()[0].split(':')[0] for line in lines[1:] if line.strip()]
+                return {"node_id": node_id, "models": models}
+            return {"node_id": node_id, "models": []}
+
+        # 1. Try to get Ray actor
+        actor = ray.get_actor(node_id)
+        models = await actor.list_models.remote()
+        return {"node_id": node_id, "models": models}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Node not found or does not support model listing")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ModelSwapRequest(BaseModel):
+    model: str
+
+@app.post("/api/nodes/{node_id}/model")
+async def swap_node_model(node_id: str, request: ModelSwapRequest):
+    """Swap model on a specific node"""
+    try:
+        verification = "No verification output"
+        
+        # Special handling for coordinator
+        if "coordinator" in node_id:
+             # Just verify it exists basically, no "swap" needed for Ollama service unless we track it
+             # But we can run `ollama ps` to verify
+             import subprocess
+             # We can try to 'pull' or 'run' in background to ensure it's loaded?
+             # For now, just listing ps is enough verification
+             # Coordinator "swapping" just means updating the registry record really, 
+             # as the Planner will use the model specified in the request/registry.
+             ver_proc = subprocess.run(['ollama', 'ps'], capture_output=True, text=True)
+             verification = ver_proc.stdout
+        else:
+            # Get Ray actor
+            worker = ray.get_actor(node_id)
+            result = await worker.swap_model.remote(request.model)
+            verification = result.get("verification", "No verification output")
+        
+        # Update registry
+        registry.update_node_model(node_id, request.model)
+        
+        return {"status": "ok", "model": request.model, "verification": verification}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/nodes/{node_id}/restart")
+async def restart_node(node_id: str):
+    """Restart a specific node (Ray Actor)"""
+    try:
+        if "coordinator" in node_id:
+             raise HTTPException(status_code=400, detail="Cannot restart coordinator via API.")
+             
+        actor = ray.get_actor(node_id)
+        ray.kill(actor)
+        return {"status": "ok", "message": f"Node {node_id} killed. Ray should auto-restart if configured."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to restart node: {e}")
 
 @app.post("/api/cache/cleanup")
 async def cleanup_cache():

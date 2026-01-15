@@ -6,6 +6,7 @@ import socket
 import ollama
 import subprocess
 from typing import Dict, Any, List, Optional
+from coordinator.profiler import profile
 
 def detect_available_models() -> Optional[str]:
     """
@@ -56,7 +57,7 @@ class RayMessageBus:
 
 @ray.remote
 class LLMWorker:
-    def __init__(self, model_name: str = None, api_base: str = None):
+    def __init__(self, node_id: str, model_name: str = None, api_base: str = None):
         import os
         # Fallback chain: explicit param → env var → auto-detect → default
         if model_name:
@@ -69,13 +70,56 @@ class LLMWorker:
             if not detected:
                 print(f"ℹ️ Using default model: {self.model_name}")
         self.api_base = api_base  # e.g., "http://192.168.1.5:1234/v1"
-        self.node_id = f"worker-{uuid.getnode()}"
+        self.node_id = node_id
         self.bus = None
         self.running = True
         self.generated_bytes = 0
         self.ip = self._get_ip()
         self.last_task = "Idle"
         asyncio.create_task(self._heartbeat_loop())
+
+    def list_models(self) -> List[str]:
+        """List available models on this node"""
+        try:
+            result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                return [line.split()[0].split(':')[0] for line in lines[1:] if line.strip()]
+            return []
+        except Exception as e:
+            return [f"Error: {e}"]
+
+    async def swap_model(self, target_model: str) -> Dict[str, Any]:
+        """Swap to a different model and verify"""
+        self.last_task = f"Swapping to {target_model}..."
+        print(f"🔄 Swapping model on {self.node_id} to {target_model}")
+        
+        try:
+            # 1. Pull/Load (Ollama auto-pulls on chat, but let's be explicit if needed)
+            # For now, we trust ollama run/chat to pull.
+            
+            # 2. Update state
+            self.model_name = target_model
+            
+            # 3. Force Load / Verify
+            # Simple ping to force model load
+            try:
+                ollama.chat(model=self.model_name, messages=[{'role': 'user', 'content': 'ping'}], keep_alive='5m')
+            except Exception as e:
+                pass # Trigger load
+                
+            # 4. Verification Command
+            verify_cmd = subprocess.run(['ollama', 'ps'], capture_output=True, text=True)
+            
+            self.last_task = "Idle"
+            return {
+                "status": "ok", 
+                "current_model": self.model_name,
+                "verification": verify_cmd.stdout
+            }
+        except Exception as e:
+            self.last_task = "Error Swapping"
+            return {"status": "error", "error": str(e)}
 
     def _get_ip(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -106,6 +150,7 @@ class LLMWorker:
                  await self.bus.publish("heartbeat", msg)
             await asyncio.sleep(5)
 
+    @profile
     async def generate(self, prompt: str) -> str:
         self.last_task = f"Processing: {prompt[:20]}..."
         
@@ -150,7 +195,7 @@ class LLMWorker:
 
             response = ollama.chat(model=self.model_name, messages=[
                 {'role': 'user', 'content': prompt},
-            ])
+            ], keep_alive='60m') # Keep model loaded for 60 minutes
             resp = response['message']['content']
             
             # Cache successful response

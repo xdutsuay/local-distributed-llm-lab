@@ -3,6 +3,7 @@ import os
 from typing import List, Dict, Any
 import ollama
 from coordinator.worker import detect_available_models
+from coordinator.profiler import profile
 
 class Planner:
     def __init__(self, model_name: str = None):
@@ -13,12 +14,13 @@ class Planner:
             self.model_name = os.getenv("OLLAMA_MODEL")
         else:
             detected = detect_available_models()
-            self.model_name = detected if detected else "llama3.2"
+            self.model_name = detected if detected else "qwen2.5-coder"
             if not detected:
                 print(f"ℹ️ Planner using default model: {self.model_name}")
         
         print(f"📋 Planner initialized with model: {self.model_name}")
 
+    @profile
     def plan(self, user_query: str) -> List[Dict[str, Any]]:
         """
         Decomposes a user query into a list of execution steps.
@@ -42,16 +44,22 @@ class Planner:
             response = ollama.chat(model=self.model_name, messages=[
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_query},
-            ])
+            ], options={'temperature': 0.1})
             
-            content = response['message']['content']
-            # Simple cleanup to ensure JSON
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-                
-            return json.loads(content.strip())
+            content = response['message']['content'].strip()
+            print(f"🔍 Raw Planner Output: {content[:100]}...")
+            
+            # Robust cleanup
+            if "```" in content:
+                import re
+                match = re.search(r"```(?:json)?(.*?)```", content, re.DOTALL)
+                if match:
+                    content = match.group(1).strip()
+                else:
+                    # Fallback if regex fails but backticks exist
+                    content = content.replace("```json", "").replace("```", "").strip()
+            
+            return json.loads(content)
             
         except Exception as e:
             print(f"Error generating plan: {e}")
