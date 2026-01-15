@@ -9,6 +9,8 @@ class ClusterEvents(str, Enum):
     HEARTBEAT = "heartbeat"
     TASK_COMPLETE = "task_complete"
     NODE_JOIN = "node_join"
+    EXECUTE_TASK = "execute_task"
+    TASK_RESULT = "task_result"
 
 class MessageBus(ABC):
     @abstractmethod

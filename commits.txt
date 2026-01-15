@@ -1,0 +1,82 @@
+Hash: dd8492b
+Author: xdutsuay
+Date: 17 hours ago
+Description: docs: add comprehensive implementation guide for Phase 9-11
+- Added detailed guide for recent phases.
+
+Hash: d37cd92
+Author: xdutsuay
+Date: 17 hours ago
+Description: docs: update README and create fresh walkthrough (wk2.md)
+- Updated main README.
+- Created wk2.md walkthrough.
+
+Hash: c689dac
+Author: xdutsuay
+Date: 18 hours ago
+Description: refactor: reorganize project structure - move obsolete files to archive
+- Cleaned up project root.
+- Moved old scripts to archive/.
+
+Hash: 96fdb6b
+Author: xdutsuay
+Date: 18 hours ago
+Description: test: add comprehensive test suite for routes, heartbeat, cluster, load balancing, cache, and persistence
+- Added standard test suite.
+- Covered core functionality.
+
+Hash: 7464850
+Author: xdutsuay
+Date: 2 days ago
+Description: docs: add ISSUE-001 regarding prompt mismatch and routing imbalance
+- Documented known issue with routing.
+
+Hash: 9577520
+Author: xdutsuay
+Date: 2 days ago
+Description: feat: advanced observability - attribution, composition metrics, and trace visuals
+- Added improved logging and tracing.
+
+Hash: 468a216
+Author: xdutsuay
+Date: 2 days ago
+Description: feat: reliability polish - dashboard refresh, worker attribution, and regression tests
+- Improved dashboard UI.
+- Fixed worker attribution bugs.
+
+Hash: b4fe8c7
+Author: xdutsuay
+Date: 2 days ago
+Description: fix: use explicit namespace 'llm-lab' for Ray Actor discovery
+- Fixed critical bug where workers couldn't find each other.
+
+Hash: fb867db
+Author: xdutsuay
+Date: 2 days ago
+Description: feat: updated worker script and added shared clipboard
+- Added clipboard sharing feature.
+
+Hash: 6be49a1
+Author: xdutsuay
+Date: 2 days ago
+Description: feat: Enhance observability & reliability, add LM Studio support
+- Added support for LM Studio backend.
+
+Hash: a597a07
+Author: xdutsuay
+Date: 2 days ago
+Description: feat(observability): Add Chat UI, Task Dashboard, and MCP Server bridge.
+- Initial UI release.
+- Added MCP support.
+
+Hash: 8d39bd4
+Author: xdutsuay
+Date: 2 days ago
+Description: Add test suite and SEO-optimized README
+- Initial testing setup.
+
+Hash: 28d40e1
+Author: xdutsuay
+Date: 2 days ago
+Description: Initial commit: Phases 0-4 complete (Coordinator, PWA, Ray, LangGraph)
+- Project initialization.

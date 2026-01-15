@@ -7,16 +7,52 @@ from coordinator.main import app, task_history
 import time
 
 
-@pytest.mark.skip(reason="Load balancing not yet implemented")
+"""
+Tests for load balancing and multi-node task distribution
+"""
+import pytest
+from httpx import AsyncClient, ASGITransport
+from coordinator.main import app, task_history
+from coordinator.worker_pool import WorkerPool
+import ray
+import time
+
+
 @pytest.mark.asyncio
-async def test_request_distributed_across_nodes():
-    """
-    Test that when multiple LLM nodes are available,
-    requests are distributed across them
-    """
-    # This test requires a running cluster with 2+ nodes
-    # We should verify that consecutive requests use different nodes
-    pass
+async def test_worker_pool_initialization():
+    """Test that WorkerPool initializes with correct number of workers"""
+    if not ray.is_initialized():
+        ray.init(namespace="llm-lab", ignore_reinit_error=True)
+    
+    pool = WorkerPool(num_workers=3)
+    assert pool.get_pool_size() == 3
+    
+    # Test that we can get workers
+    worker1 = pool.get_next_worker()
+    worker2 = pool.get_next_worker()
+    worker3 = pool.get_next_worker()
+    
+    assert worker1 is not None
+    assert worker2 is not None
+    assert worker3 is not None
+
+
+@pytest.mark.asyncio
+async def test_round_robin_algorithm():
+    """Test that round-robin properly cycles through workers"""
+    if not ray.is_initialized():
+        ray.init(namespace="llm-lab", ignore_reinit_error=True)
+    
+    pool = WorkerPool(num_workers=2)
+    
+    # Get workers in sequence to verify round-robin
+    workers = [pool.get_next_worker() for _ in range(6)]
+    
+    # First and third should be the same (and 5th)
+    # Second and fourth should be the same (and 6th)
+    assert workers[0] == workers[2] == workers[4]
+    assert workers[1] == workers[3] == workers[5]
+    assert workers[0] != workers[1]
 
 
 @pytest.mark.skip(reason="Parallel execution not yet implemented")

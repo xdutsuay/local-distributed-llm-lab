@@ -4,7 +4,41 @@ import asyncio
 import uuid
 import socket
 import ollama
-from typing import Dict, Any, List
+import subprocess
+from typing import Dict, Any, List, Optional
+
+def detect_available_models() -> Optional[str]:
+    """
+    Detect available Ollama models by running 'ollama list'.
+    Returns the first available model name, or None if detection fails.
+    """
+    try:
+        result = subprocess.run(
+            ['ollama', 'list'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            # Skip header line and get first model
+            for line in lines[1:]:
+                if line.strip():
+                    # Model name is the first column
+                    model_name = line.split()[0]
+                    if ':' in model_name:
+                        # Remove tag suffix (e.g., "llama3.2:latest" -> "llama3.2")
+                        model_name = model_name.split(':')[0]
+                    print(f"✓ Auto-detected Ollama model: {model_name}")
+                    return model_name
+        
+        print("⚠️ No Ollama models found via 'ollama list'")
+        return None
+        
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"⚠️ Ollama detection failed: {e}")
+        return None
 
 # Define messaging helper locally to avoid module dependency issues on remote side
 class RayMessageBus:
@@ -24,7 +58,16 @@ class RayMessageBus:
 class LLMWorker:
     def __init__(self, model_name: str = None, api_base: str = None):
         import os
-        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.2")
+        # Fallback chain: explicit param → env var → auto-detect → default
+        if model_name:
+            self.model_name = model_name
+        elif os.getenv("OLLAMA_MODEL"):
+            self.model_name = os.getenv("OLLAMA_MODEL")
+        else:
+            detected = detect_available_models()
+            self.model_name = detected if detected else "llama3.2"
+            if not detected:
+                print(f"ℹ️ Using default model: {self.model_name}")
         self.api_base = api_base  # e.g., "http://192.168.1.5:1234/v1"
         self.node_id = f"worker-{uuid.getnode()}"
         self.bus = None
@@ -66,6 +109,21 @@ class LLMWorker:
     async def generate(self, prompt: str) -> str:
         self.last_task = f"Processing: {prompt[:20]}..."
         
+        # Import cache manager
+        from coordinator.cache_manager import get_cache_manager
+        cache = get_cache_manager()
+        
+        # Check cache first
+        cached_response = cache.get(prompt, self.model_name)
+        if cached_response:
+            return {
+                "content": cached_response,
+                "node_id": self.node_id,
+                "model": self.model_name,
+                "timestamp": time.time(),
+                "cached": True
+            }
+        
         try:
             if self.api_base:
                 import requests
@@ -82,6 +140,10 @@ class LLMWorker:
                     resp = response.json()['choices'][0]['message']['content']
                     self.generated_bytes += len(resp.encode('utf-8'))
                     self.last_task = "Idle"
+                    
+                    # Cache successful response
+                    cache.put(prompt, self.model_name, resp)
+                    
                     return resp
                 else:
                     raise Exception(f"API Error: {response.text}")
@@ -90,12 +152,17 @@ class LLMWorker:
                 {'role': 'user', 'content': prompt},
             ])
             resp = response['message']['content']
+            
+            # Cache successful response
+            cache.put(prompt, self.model_name, resp)
+            
             # Return rich object
             return {
                 "content": resp,
                 "node_id": self.node_id,
                 "model": self.model_name,
-                "timestamp": time.time()
+                "timestamp": time.time(),
+                "cached": False
             }
             
         except Exception as e:
@@ -111,11 +178,16 @@ class LLMWorker:
                     resp = response['message']['content']
                     self.generated_bytes += len(resp.encode('utf-8'))
                     self.last_task = "Idle"
+                    
+                    # Cache successful response
+                    cache.put(prompt, self.model_name, resp)
+                    
                     return {
                         "content": resp,
                         "node_id": self.node_id,
                         "model": self.model_name,
-                        "timestamp": time.time()
+                        "timestamp": time.time(),
+                        "cached": False
                     }
                 except Exception as pull_error:
                     print(f"Pull failed: {pull_error}")
@@ -130,7 +202,8 @@ class LLMWorker:
                 "content": resp,
                 "node_id": self.node_id,
                 "model": self.model_name,
-                "timestamp": time.time()
+                "timestamp": time.time(),
+                "cached": False
             }
 
 if __name__ == "__main__":

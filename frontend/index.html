@@ -63,19 +63,32 @@
                 log('Wake Lock released');
                 return;
             }
+            await requestWakeLock();
+        }
+
+        async function requestWakeLock() {
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
                 document.getElementById('wakeBtn').textContent = 'Disable Wake Lock 🌙';
                 log('Wake Lock active');
                 wakeLock.addEventListener('release', () => {
+                    log('Wake Lock released by system');
+                    // Don't nullify immediately if we want to auto-reacquire, 
+                    // but usually system release means we lost it.
                     wakeLock = null;
                     document.getElementById('wakeBtn').textContent = 'Enable Wake Lock ☀️';
-                    log('Wake Lock released by system');
                 });
             } catch (err) {
                 log(`Wake Lock failed: ${err.name}, ${err.message}`);
             }
         }
+
+        // Auto-reacquire on visibility change
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
         let nodeId = localStorage.getItem('llm_node_id');
         if (!nodeId) {
             function uuidv4() {
@@ -122,23 +135,49 @@
             logDiv.innerHTML = '';
         }
 
+        // Initialize Compute Worker
+        const computeWorker = new Worker('worker.js');
+        let activeWs = null;
+
+        // Handle Worker Results
+        computeWorker.onmessage = (e) => {
+            const { task_id, status, response, error } = e.data;
+            log(`Task ${task_id} completed: ${status}`);
+
+            if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+                const resultMsg = {
+                    node_id: nodeId, // send node_id so coordinator knows who did it
+                    task_id: task_id,
+                    status: status,
+                    response: response,
+                    error: error,
+                    timestamp: Date.now() / 1000
+                };
+                activeWs.send(JSON.stringify(resultMsg));
+                log(`Result sent for ${task_id}`);
+            } else {
+                log(`Error: WS not open, cannot send result for ${task_id}`);
+            }
+        };
+
         function connect() {
             const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${proto}//${window.location.host}/ws/join`;
 
             log(`Connecting to ${wsUrl}...`);
             const ws = new WebSocket(wsUrl);
+            activeWs = ws;
 
             ws.onopen = () => {
-                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').textContent = 'Connected (Compute Node)';
                 document.getElementById('status').className = 'status connected';
-                log('WebSocket Connected');
+                log('WebSocket Connected - Ready for Tasks');
 
-                // Send handshake / initial heartbeat
+                // Send handshake / initial heartbeat with extended capabilities
                 const msg = {
                     type: "heartbeat",
                     node_id: nodeId,
-                    capabilities: ["web_worker", "browser_tool"],
+                    capabilities: ["web_worker", "browser_tool", "javascript_execution"],
                     model: "web_slm",
                     timestamp: Date.now() / 1000,
                     data_stats: { sent_bytes: bytesSent }
@@ -160,12 +199,27 @@
             };
 
             ws.onmessage = (event) => {
-                log(`Received: ${event.data}`);
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'execute_task') {
+                        log(`⚡ Received Task: ${msg.task_id}`);
+                        // Forward to Worker
+                        computeWorker.postMessage({
+                            task_id: msg.task_id,
+                            code: msg.code
+                        });
+                    } else {
+                        // log(`Received: ${event.data}`); // Reduce spam
+                    }
+                } catch (e) {
+                    log(`Error parsing message: ${e}`);
+                }
             };
 
             ws.onclose = () => {
                 document.getElementById('status').textContent = 'Disconnected';
                 document.getElementById('status').className = 'status disconnected';
+                activeWs = null;
                 log('Disconnected. Retrying in 3s...');
                 setTimeout(connect, 3000);
             };

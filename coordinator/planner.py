@@ -1,10 +1,23 @@
 import json
+import os
 from typing import List, Dict, Any
 import ollama
+from coordinator.worker import detect_available_models
 
 class Planner:
-    def __init__(self, model_name: str = "llama3.2"):
-        self.model_name = model_name
+    def __init__(self, model_name: str = None):
+        # Fallback chain: explicit param → env var → auto-detect → default
+        if model_name:
+            self.model_name = model_name
+        elif os.getenv("OLLAMA_MODEL"):
+            self.model_name = os.getenv("OLLAMA_MODEL")
+        else:
+            detected = detect_available_models()
+            self.model_name = detected if detected else "llama3.2"
+            if not detected:
+                print(f"ℹ️ Planner using default model: {self.model_name}")
+        
+        print(f"📋 Planner initialized with model: {self.model_name}")
 
     def plan(self, user_query: str) -> List[Dict[str, Any]]:
         """

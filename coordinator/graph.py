@@ -5,6 +5,7 @@ import operator
 import ray
 from coordinator.planner import Planner
 from coordinator.worker import LLMWorker
+from coordinator.worker_pool import WorkerPool
 import time
 
 # Define the state of the graph
@@ -17,10 +18,10 @@ class AgentState(TypedDict):
     execution_trace: Annotated[List[Dict[str, Any]], operator.add] # Detailed trace of execution
 
 class WorkflowManager:
-    def __init__(self):
+    def __init__(self, num_workers: int = 3):
         self.planner = Planner()
-        # Initialize Ray worker (in real app, use a pool or router)
-        self.worker = LLMWorker.remote() 
+        # Initialize worker pool for round-robin load balancing
+        self.worker_pool = WorkerPool(num_workers=num_workers)
         self.memory = MemorySaver()
         self.workflow = self._build_graph()
 
@@ -50,7 +51,23 @@ class WorkflowManager:
     def plan_node(self, state: AgentState):
         query = state["user_query"]
         print(f"Planning for: {query}")
-        plan = self.planner.plan(query)
+        
+        # --- RAG Integration (Phase 13) ---
+        from coordinator.memory import get_vector_store
+        memory = get_vector_store()
+        
+        # Retrieve context
+        context_docs = memory.search(query)
+        context_str = "\n".join([f"- {doc}" for doc in context_docs])
+        
+        if context_str:
+            print(f"🧠 Retrieved context: {context_str[:100]}...")
+            # Augment query
+            augmented_query = f"{query}\n\nRelevant Context:\n{context_str}"
+        else:
+            augmented_query = query
+            
+        plan = self.planner.plan(augmented_query)
         return {"plan": plan, "current_step_index": 0}
 
     def execute_node(self, state: AgentState):
@@ -61,15 +78,23 @@ class WorkflowManager:
             step = plan[idx]
             print(f"Executing step {idx + 1}: {step['description']}")
             
-            # Execute remotely via Ray
+            # Execute remotely via Ray using worker pool
             # For now, we only support llm_worker type
             prompt = step["payload"].get("prompt", "")
             if not prompt and "query" in step["payload"]:
                  prompt = step["payload"]["query"]
+            
+            # Handle empty prompt edge case
+            if not prompt:
+                print(f"⚠️ Warning: Empty prompt for step {idx + 1}")
+                prompt = step.get("description", "")
                  
             try:
+                # Get next worker from pool using round-robin
+                worker = self.worker_pool.get_next_worker()
+                
                 start_exec = time.time()
-                response_ref = self.worker.generate.remote(prompt)
+                response_ref = worker.generate.remote(prompt)
                 raw_result = ray.get(response_ref)
                 duration = time.time() - start_exec
                 
