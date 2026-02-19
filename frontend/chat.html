@@ -143,8 +143,19 @@
 
             const typingDiv = document.createElement('div');
             typingDiv.className = 'typing';
-            typingDiv.textContent = 'Thinking & Planning...';
+            typingDiv.textContent = 'Thinking & Planning... (0s)';
             chat.appendChild(typingDiv);
+
+            // Show elapsed time so user knows it's processing
+            const startTime = Date.now();
+            const timer = setInterval(() => {
+                const elapsed = Math.round((Date.now() - startTime) / 1000);
+                typingDiv.textContent = `Thinking & Planning... (${elapsed}s)`;
+            }, 1000);
+
+            // 5-minute timeout — LLM models can be slow on first query
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000);
 
             try {
                 // Client Identity
@@ -157,24 +168,28 @@
                 const res = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         prompt: text,
                         client_id: clientId
-                    })
+                    }),
+                    signal: controller.signal
                 });
-                const data = await res.json();
 
+                clearTimeout(timeoutId);
+                clearInterval(timer);
                 chat.removeChild(typingDiv);
 
-                // User requested to hide logs/plan
-                // if (data.plan && data.plan.length > 0) {
-                //    appendPlan(data.plan);
-                // }
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(errData.detail || `Server error ${res.status}`);
+                }
+
+                const data = await res.json();
+
                 console.log("Plan:", data.plan); // Keep in console for debug
 
                 let answer = data.response;
                 if (Array.isArray(answer)) {
-                    // Show only the last response (final answer)
                     answer = answer[answer.length - 1];
                 } else if (typeof answer === 'object') {
                     answer = JSON.stringify(answer, null, 2);
@@ -182,8 +197,14 @@
                 appendMessage(answer, 'assistant');
 
             } catch (e) {
-                chat.removeChild(typingDiv);
-                appendMessage(`Error: ${e.message}`, 'assistant');
+                clearTimeout(timeoutId);
+                clearInterval(timer);
+                if (chat.contains(typingDiv)) chat.removeChild(typingDiv);
+                if (e.name === 'AbortError') {
+                    appendMessage('⏱️ Request timed out after 5 minutes. The model may be overloaded — please try again.', 'assistant');
+                } else {
+                    appendMessage(`❌ Error: ${e.message}`, 'assistant');
+                }
             }
 
             input.disabled = false;

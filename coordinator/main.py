@@ -14,12 +14,22 @@ import time
 import uuid
 import socket
 from coordinator.profiler import profile
+import os
 
 app = FastAPI(title="LLM Lab Coordinator")
 
-# Initialize Ray (suppress error if already running)
-# We MUST use a fixed namespace so workers can find actors
-ray.init(address="auto", namespace="llm-lab", ignore_reinit_error=True)
+# Initialize Ray (optional for testing)
+# Check for test/mock mode before initializing Ray
+if not os.getenv("RAY_MOCK_MODE"):
+    try:
+        ray.init(address="auto", namespace="llm-lab", ignore_reinit_error=True)
+        print("✅ Connected to Ray cluster")
+    except Exception as e:
+        print(f"⚠️  Ray init failed: {e}. Some features may not work.")
+        print("   Tip: Start Ray with 'ray start --head' or run in test mode with RAY_MOCK_MODE=1")
+else:
+    print("🧪 Running in RAY_MOCK_MODE (test environment)")
+
 
 # Globals
 workflow_manager = WorkflowManager()
@@ -66,6 +76,30 @@ async def startup_event():
     # Start coordinator self-registration
     asyncio.create_task(coordinator_heartbeat_loop())
     print(f"✅ Coordinator registered as node: {coordinator_node_id}")
+    # Pre-warm the Ollama model in the background so first chat request is fast
+    asyncio.create_task(_prewarm_model())
+
+async def _prewarm_model():
+    """Background task to pre-load the Ollama model into VRAM on startup."""
+    import ollama as _ollama
+    from coordinator.worker import detect_available_models
+    model = os.getenv("OLLAMA_MODEL") or detect_available_models() or "qwen2.5-coder"
+    print(f"🔥 Pre-warming model '{model}' in background...")
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: _ollama.chat(
+                model=model,
+                messages=[{"role": "user", "content": "hi"}],
+                options={"temperature": 0.1, "num_predict": 1},
+                keep_alive="60m"
+            )
+        )
+        print(f"✅ Model '{model}' pre-warmed and ready!")
+    except Exception as e:
+        print(f"⚠️  Model pre-warm failed (will still work on first request): {e}")
+
 
 # Mount frontend
 app.mount("/static", StaticFiles(directory="frontend"), name="static")

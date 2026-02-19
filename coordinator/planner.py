@@ -44,7 +44,7 @@ class Planner:
             response = ollama.chat(model=self.model_name, messages=[
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_query},
-            ], options={'temperature': 0.1})
+            ], options={'temperature': 0.1}, keep_alive='60m')
             
             content = response['message']['content'].strip()
             print(f"🔍 Raw Planner Output: {content[:100]}...")
