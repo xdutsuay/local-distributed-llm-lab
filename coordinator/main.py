@@ -8,6 +8,7 @@ from coordinator.graph import WorkflowManager
 from coordinator.registry import NodeRegistry
 from coordinator.messaging import RayMessageBus, ClusterEvents
 from coordinator.tools.registry import get_tool_registry
+from coordinator import db
 import asyncio
 import json
 import time
@@ -36,7 +37,8 @@ workflow_manager = WorkflowManager()
 message_bus = RayMessageBus()
 registry = NodeRegistry(message_bus)
 tool_registry = get_tool_registry()
-task_history = [] # List of {"id": str, "prompt": str, "status": str, "timestamp": float}
+# task_history kept as a small in-memory cache for fast /api/tasks; DB is the source of truth
+task_history: List[Dict[str, Any]] = []
 
 # Coordinator node info for self-registration
 def get_local_ip():
@@ -71,20 +73,28 @@ async def coordinator_heartbeat_loop():
 
 @app.on_event("startup")
 async def startup_event():
+    # Init SQLite DB first (all other components log to it)
+    await db.init_db()
     await registry.start()
     print(f"🔧 Tool Registry initialized with {len(tool_registry.tools)} tools")
-    # Start coordinator self-registration
     asyncio.create_task(coordinator_heartbeat_loop())
     print(f"✅ Coordinator registered as node: {coordinator_node_id}")
-    # Pre-warm the Ollama model in the background so first chat request is fast
     asyncio.create_task(_prewarm_model())
+    await db.log_event("startup", coordinator_node_id, {"tools": len(tool_registry.tools)})
 
 async def _prewarm_model():
-    """Background task to pre-load the Ollama model into VRAM on startup."""
+    """Background task to pre-load the model into VRAM on startup."""
+    backend = os.getenv("INFERENCE_BACKEND", "ollama").lower()
+    if backend == "airllm":
+        print("ℹ️  AirLLM backend selected — model loads lazily on first request, skipping pre-warm.")
+        await db.log_event("prewarm", coordinator_node_id, {"backend": "airllm", "status": "skipped"})
+        return
+
     import ollama as _ollama
     from coordinator.worker import detect_available_models
     model = os.getenv("OLLAMA_MODEL") or detect_available_models() or "qwen2.5-coder"
     print(f"🔥 Pre-warming model '{model}' in background...")
+    await db.log_event("prewarm", coordinator_node_id, {"model": model, "status": "started"})
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -97,8 +107,10 @@ async def _prewarm_model():
             )
         )
         print(f"✅ Model '{model}' pre-warmed and ready!")
+        await db.log_event("prewarm", coordinator_node_id, {"model": model, "status": "ready"})
     except Exception as e:
         print(f"⚠️  Model pre-warm failed (will still work on first request): {e}")
+        await db.log_event("prewarm", coordinator_node_id, {"model": model, "status": "failed", "error": str(e)})
 
 
 # Mount frontend
@@ -242,9 +254,10 @@ async def chat(request: ChatRequest):
         if trace:
             final_node = trace[-1].get("node_id", "Unknown")
 
-        # Log task
+        # Persist task to SQLite DB (source of truth)
+        task_id = str(uuid.uuid4())
         task_entry = {
-            "id": str(uuid.uuid4()),
+            "id": task_id,
             "client_id": request.client_id,
             "prompt": request.prompt,
             "status": "Success",
@@ -255,38 +268,49 @@ async def chat(request: ChatRequest):
             "route_details": trace if trace else route_details,
             "final_node": final_node,
             "worker": result.get("worker", "unknown"),
-            "composition": composition # Raw dict for frontend charts
+            "composition": composition
         }
+        asyncio.create_task(db.upsert_task(task_entry))  # non-blocking write
+        # Keep small in-memory cache for immediate reads (last 20)
         task_history.insert(0, task_entry)
-        # Keep only last 100
-        if len(task_history) > 100:
+        if len(task_history) > 20:
             task_history.pop()
-            
+
         response_content = result["results"]
-        # Smart Health Check Trigger
         if isinstance(response_content, list) and len(response_content) > 0:
             if "[Mock]" in response_content[0]:
                 print("⚠️ Mock response detected. Triggering Health Check.")
                 asyncio.create_task(registry.perform_health_check())
 
         return {
-            "response": result["results"], 
+            "response": result["results"],
             "plan": result["plan"],
             "worker": "distributed-graph"
         }
     except Exception as e:
-        task_history.insert(0, {
+        err_entry = {
             "id": str(uuid.uuid4()),
             "prompt": request.prompt,
             "status": "Failed",
             "error": str(e),
             "timestamp": time.time()
-        })
+        }
+        asyncio.create_task(db.upsert_task(err_entry))
+        asyncio.create_task(db.log_event("error", "coordinator", {"prompt": request.prompt, "error": str(e)}))
+        task_history.insert(0, err_entry)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/tasks")
 async def get_tasks():
-    return {"tasks": task_history}
+    """Return persistent task history from SQLite (survives restarts)."""
+    tasks = await db.get_tasks(limit=100)
+    return {"tasks": tasks}
+
+@app.get("/api/events")
+async def get_events(event_type: Optional[str] = None, limit: int = 200):
+    """Return operational event log — useful for debugging stuck requests."""
+    events = await db.get_events(limit=limit, event_type=event_type)
+    return {"events": events}
 
 @app.get("/health")
 def health():

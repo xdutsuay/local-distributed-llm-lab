@@ -184,6 +184,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="showTab('nodes')">Nodes</button>
         <button class="tab-btn" onclick="showTab('tasks')">Task History</button>
+        <button class="tab-btn" onclick="showTab('events')">🔍 Event Log</button>
     </div>
 
     <!-- Nodes Tab -->
@@ -229,6 +230,40 @@
             <tbody id="tasksTable">
                 <tr>
                     <td colspan="7">No tasks yet.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Events Tab -->
+    <div id="events" class="tab-content">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:15px;">
+            <button class="refresh-btn" onclick="fetchEvents()" style="margin-bottom:0;">Refresh Events</button>
+            <select id="eventTypeFilter" onchange="fetchEvents()"
+                style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                <option value="">All types</option>
+                <option value="plan_start">plan_start</option>
+                <option value="plan_done">plan_done</option>
+                <option value="execute_error">execute_error</option>
+                <option value="error">error</option>
+                <option value="prewarm">prewarm</option>
+                <option value="health_check">health_check</option>
+                <option value="heartbeat_miss">heartbeat_miss</option>
+                <option value="startup">startup</option>
+            </select>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>Node</th>
+                    <th>Payload</th>
+                </tr>
+            </thead>
+            <tbody id="eventsTable">
+                <tr>
+                    <td colspan="4">No events yet.</td>
                 </tr>
             </tbody>
         </table>
@@ -319,6 +354,46 @@
             document.getElementById(tabId).classList.add('active');
             document.querySelector(`button[onclick="showTab('${tabId}')"]`).classList.add('active');
             if (tabId === 'tasks') fetchTasks();
+            if (tabId === 'events') fetchEvents();
+        }
+
+        // Event type badge colours
+        const EVENT_COLORS = {
+            plan_start:      '#cfe2ff',
+            plan_done:       '#d1e7dd',
+            execute_error:   '#f8d7da',
+            error:           '#f8d7da',
+            prewarm:         '#fff3cd',
+            health_check:    '#e2d9f3',
+            heartbeat_miss:  '#fde8d8',
+            startup:         '#d1e7dd',
+        };
+
+        async function fetchEvents() {
+            const filter = document.getElementById('eventTypeFilter').value;
+            const url = '/api/events?limit=200' + (filter ? `&event_type=${filter}` : '');
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                const tbody = document.getElementById('eventsTable');
+                tbody.innerHTML = '';
+                if (!data.events || data.events.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4">No events recorded.</td></tr>';
+                    return;
+                }
+                data.events.forEach(ev => {
+                    const row = document.createElement('tr');
+                    const bg = EVENT_COLORS[ev.event_type] || '#f4f4f9';
+                    const payloadStr = JSON.stringify(ev.payload || {});
+                    row.innerHTML = `
+                        <td><small>${new Date(ev.ts * 1000).toLocaleTimeString()}</small></td>
+                        <td><span class="badge" style="background:${bg};color:#333">${ev.event_type}</span></td>
+                        <td><small>${ev.node_id || '-'}</small></td>
+                        <td><small style="font-family:monospace; word-break:break-all">${payloadStr.substring(0,120)}${payloadStr.length>120?'…':''}</small></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch(e) { console.error(e); }
         }
 
         function formatBytes(bytes, decimals = 2) {

@@ -2,10 +2,12 @@ from typing import TypedDict, List, Dict, Any, Annotated
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 import operator
+import asyncio
 import ray
 from coordinator.planner import Planner
 from coordinator.worker import LLMWorker
 from coordinator.worker_pool import WorkerPool
+from coordinator import db
 import time
 
 # Define the state of the graph
@@ -51,23 +53,26 @@ class WorkflowManager:
     def plan_node(self, state: AgentState):
         query = state["user_query"]
         print(f"Planning for: {query}")
-        
+        asyncio.ensure_future(
+            db.log_event("plan_start", "coordinator", {"query": query[:200]})
+        )
+
         # --- RAG Integration (Phase 13) ---
         from coordinator.memory import get_vector_store
         memory = get_vector_store()
-        
-        # Retrieve context
         context_docs = memory.search(query)
         context_str = "\n".join([f"- {doc}" for doc in context_docs])
-        
+
         if context_str:
-            print(f"🧠 Retrieved context: {context_str[:100]}...")
-            # Augment query
+            print(f"\U0001f9e0 Retrieved context: {context_str[:100]}...")
             augmented_query = f"{query}\n\nRelevant Context:\n{context_str}"
         else:
             augmented_query = query
-            
+
         plan = self.planner.plan(augmented_query)
+        asyncio.ensure_future(
+            db.log_event("plan_done", "coordinator", {"steps": len(plan)})
+        )
         return {"plan": plan, "current_step_index": 0}
 
     def execute_node(self, state: AgentState):
@@ -110,6 +115,10 @@ class WorkflowManager:
                 result = f"Error: {str(e)}"
                 self.last_worker_id = "error"
                 duration = 0
+                asyncio.ensure_future(
+                    db.log_event("execute_error", "coordinator",
+                                 {"step": idx + 1, "error": str(e), "description": step.get("description", "")})
+                )
             
             trace_entry = {
                 "step": idx + 1,

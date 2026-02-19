@@ -69,6 +69,24 @@ class LLMWorker:
             self.model_name = detected if detected else "llama3.2"
             if not detected:
                 print(f"ℹ️ Using default model: {self.model_name}")
+
+        # --- Inference backend selection ---
+        self.backend = os.getenv("INFERENCE_BACKEND", "ollama").lower()
+        self._airllm_model = None
+        if self.backend == "airllm":
+            try:
+                from airllm import AutoModel
+                print(f"🚀 AirLLM backend initialising model '{self.model_name}'...")
+                self._airllm_model = AutoModel.from_pretrained(self.model_name)
+                print(f"✅ AirLLM model '{self.model_name}' loaded.")
+            except ImportError:
+                print("⚠️ airllm package not installed. Falling back to Ollama.")
+                print("   Install with: pip install airllm")
+                self.backend = "ollama"
+            except Exception as e:
+                print(f"⚠️ AirLLM init failed ({e}). Falling back to Ollama.")
+                self.backend = "ollama"
+
         self.api_base = api_base  # e.g., "http://192.168.1.5:1234/v1"
         self.node_id = node_id
         self.bus = None
@@ -193,9 +211,41 @@ class LLMWorker:
                 else:
                     raise Exception(f"API Error: {response.text}")
 
+            # --- AirLLM backend path ---
+            if self.backend == "airllm" and self._airllm_model is not None:
+                try:
+                    input_text = f"<s>[INST] {prompt} [/INST]"
+                    tokens = self._airllm_model.tokenizer(
+                        input_text, return_tensors="pt", truncation=True, max_length=512
+                    )
+                    out = self._airllm_model.generate(
+                        tokens["input_ids"],
+                        attention_mask=tokens.get("attention_mask"),
+                        max_new_tokens=256,
+                        do_sample=False,
+                    )
+                    resp = self._airllm_model.tokenizer.decode(
+                        out[0][tokens["input_ids"].shape[1]:], skip_special_tokens=True
+                    )
+                except Exception as e:
+                    print(f"⚠️ AirLLM generate error ({e}), falling back to Ollama.")
+                    resp = None
+                if resp:
+                    cache.put(prompt, self.model_name, resp)
+                    self.generated_bytes += len(resp.encode("utf-8"))
+                    self.last_task = "Idle"
+                    return {
+                        "content": resp,
+                        "node_id": self.node_id,
+                        "model": f"airllm:{self.model_name}",
+                        "timestamp": time.time(),
+                        "cached": False,
+                    }
+
+            # --- Ollama backend path (default) ---
             response = ollama.chat(model=self.model_name, messages=[
                 {'role': 'user', 'content': prompt},
-            ], keep_alive='60m') # Keep model loaded for 60 minutes
+            ], keep_alive='60m')
             resp = response['message']['content']
             
             # Cache successful response

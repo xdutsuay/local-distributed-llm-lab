@@ -29,9 +29,10 @@ This document outlines the planned features for Phases 12 and beyond.
 - [ ] **Cache Replication**:
     - Using Ray's object replication.
     - Ensure cache hits even if the generator node dies.
-- [ ] **State Checkpointing**:
-    - Persist LangGraph state to disk (SQLite/Postgres) instead of memory.
-    - Allow resuming workflows after coordinator restart.
+- [x] **State Checkpointing** ✅ **(Phase 12 — Done)**:
+    - SQLite activity store (`coordinator/db.py`) persists tasks, nodes, events.
+    - `/api/events` endpoint exposes operational log for debugging stuck states.
+    - LangGraph state checkpointing (`data/llmlab.db`, survives restarts).
 
 ## Phase 15: Multi-Modal Capabilities
 **Goal**: Vision and Audio.

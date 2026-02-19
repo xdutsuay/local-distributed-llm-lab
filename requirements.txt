@@ -7,4 +7,8 @@ uvicorn
 ollama
 requests
 websockets
+aiosqlite>=0.20.0
 
+# Optional — install only when using AirLLM backend (INFERENCE_BACKEND=airllm)
+# Pulls PyTorch + Hugging Face Transformers. Skip if using Ollama (default).
+# airllm>=2.10.0
