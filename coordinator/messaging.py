@@ -2,6 +2,7 @@ import asyncio
 from typing import Callable, Any, Dict, List
 from enum import Enum
 import json
+import os
 import ray
 from abc import ABC, abstractmethod
 
@@ -20,6 +21,21 @@ class MessageBus(ABC):
     @abstractmethod
     async def subscribe(self, topic: str, callback: Callable[[Dict[str, Any]], Any]):
         pass
+
+
+class _InMemoryBusBackend:
+    def __init__(self):
+        self.queues: Dict[str, List[Dict[str, Any]]] = {}
+
+    def publish(self, topic: str, message: Dict[str, Any]):
+        self.queues.setdefault(topic, []).append(message)
+        if len(self.queues[topic]) > 100:
+            self.queues[topic].pop(0)
+
+    def get_latest(self, topic: str) -> List[Dict[str, Any]]:
+        messages = list(self.queues.get(topic, []))
+        self.queues[topic] = []
+        return messages
 
 @ray.remote
 class PubSubActor:
@@ -76,17 +92,30 @@ class RayBusBackend:
 
 class RayMessageBus(MessageBus):
     def __init__(self):
+        self._local_backend = False
+        if os.getenv("RAY_MOCK_MODE"):
+            self.backend = _InMemoryBusBackend()
+            self._local_backend = True
+            return
+
         # Allow checking if actor exists, else create
         try:
             self.backend = ray.get_actor("RayBusBackend")
-        except ValueError:
+        except Exception:
             try:
                 self.backend = RayBusBackend.options(name="RayBusBackend", lifetime="detached").remote()
             except Exception:
-                # If race condition, try getting it again
-                self.backend = ray.get_actor("RayBusBackend")
+                try:
+                    # If race condition, try getting it again
+                    self.backend = ray.get_actor("RayBusBackend")
+                except Exception:
+                    self.backend = _InMemoryBusBackend()
+                    self._local_backend = True
 
     async def publish(self, topic: str, message: Dict[str, Any]):
+        if self._local_backend:
+            self.backend.publish(topic, message)
+            return
         self.backend.publish.remote(topic, message)
 
     async def subscribe(self, topic: str, callback: Callable[[Dict[str, Any]], Any]):
@@ -98,9 +127,12 @@ class RayMessageBus(MessageBus):
     async def _poll(self, topic: str, callback: Callable):
         while True:
             try:
-                # remote calls return futures
-                ref = self.backend.get_latest.remote(topic)
-                messages = await ref
+                if self._local_backend:
+                    messages = self.backend.get_latest(topic)
+                else:
+                    # remote calls return futures
+                    ref = self.backend.get_latest.remote(topic)
+                    messages = await ref
                 for msg in messages:
                     if asyncio.iscoroutinefunction(callback):
                         await callback(msg)

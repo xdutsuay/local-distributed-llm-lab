@@ -219,3 +219,30 @@ async def get_events(
         d["payload"] = json.loads(d.get("payload") or "{}")
         result.append(d)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Sync helpers (safe to call from non-async contexts, e.g. Ray actors)
+# ---------------------------------------------------------------------------
+
+def log_event_sync(
+    event_type: str,
+    node_id: str = "coordinator",
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Synchronous version of log_event — uses stdlib sqlite3, safe from any thread."""
+    import sqlite3 as _sqlite3
+    import os as _os
+    _os.makedirs("data", exist_ok=True)
+    conn = _sqlite3.connect(DB_PATH, timeout=5)
+    try:
+        conn.execute(
+            "INSERT INTO events (event_type, node_id, payload, ts) VALUES (?, ?, ?, ?)",
+            (event_type, node_id, json.dumps(payload or {}), time.time()),
+        )
+        conn.commit()
+    except Exception:
+        pass  # Never crash caller for a telemetry write
+    finally:
+        conn.close()
+

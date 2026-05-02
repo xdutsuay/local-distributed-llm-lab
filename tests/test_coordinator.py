@@ -1,5 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
+import asyncio
+from coordinator import db
+import coordinator.main as main_mod
 
 def test_read_root(client: TestClient):
     response = client.get("/")
@@ -16,27 +19,30 @@ def test_chat_ui_endpoint(client: TestClient):
     assert "LLM Lab Chat" in response.text
 
 def test_task_history_api(client: TestClient):
-    # Initially empty
     response = client.get("/api/tasks")
     assert response.status_code == 200
-    assert response.json() == {"tasks": []}
+    initial_tasks = response.json()["tasks"]
+    initial_count = len(initial_tasks)
 
-    # Submit a dummy task (mocking invoke to avoid actual LLM call if possible, 
-    # but here we rely on the mock graph logic from previous phases or just expect failure/success)
-    # The workflow_manager is integrated in main.py, so it might fail if Ollama not reachable, 
-    # but the history should log the attempt (Success or Failed).
-    
-    try:
-        client.post("/chat", json={"prompt": "test task"})
-    except:
-        pass # Ignore error, we just want to check history logging
-        
+    asyncio.run(
+        db.upsert_task(
+            {
+                "id": "test-task-history",
+                "prompt": "test task",
+                "status": "Success",
+                "worker": "test-worker",
+                "plan_steps": 1,
+            }
+        )
+    )
+
     response = client.get("/api/tasks")
     assert response.status_code == 200
     tasks = response.json()["tasks"]
-    assert len(tasks) > 0
+
+    assert len(tasks) >= initial_count
     assert "prompt" in tasks[0]
-    assert tasks[0]["prompt"] == "test task"
+    assert any(task["prompt"] == "test task" for task in tasks)
 
 
 def test_chat_endpoint_mock_graph(client: TestClient):
@@ -53,6 +59,37 @@ def test_chat_endpoint_mock_graph(client: TestClient):
         # It's acceptable if it fails due to worker issues in test env, 
         # but 500 means unchecked crash.
         assert response.status_code != 500
+
+
+def test_chat_endpoint_returns_browser_contributions(client: TestClient, monkeypatch):
+    async def fake_invoke(prompt):
+        return {
+            "results": ["local answer"],
+            "plan": [{"step_id": 1, "description": "Answer locally", "worker_type": "llm_worker"}],
+            "worker": "local-worker",
+            "execution_trace": [{"node_id": "local-worker", "duration": 0.1}],
+        }
+
+    async def fake_browser(prompt):
+        return [{
+            "node_id": "browser-node-1",
+            "status": "success",
+            "kind": "browser_microgpt",
+            "summary": "dashboard review",
+            "keywords": ["dashboard", "review"],
+            "clauses": ["dashboard review"],
+            "error": None,
+        }]
+
+    monkeypatch.setattr(main_mod.workflow_manager, "invoke", fake_invoke)
+    monkeypatch.setattr(main_mod, "collect_browser_micro_contributions", fake_browser)
+
+    response = client.post("/chat", json={"prompt": "review dashboard"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["response"] == ["local answer"]
+    assert data["browser_contributions"][0]["node_id"] == "browser-node-1"
+    assert data["served_by"]["primary_node"] == "local-worker"
 
 def test_nodes_dashboard(client: TestClient):
     response = client.get("/nodes")

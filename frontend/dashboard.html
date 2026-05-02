@@ -359,14 +359,14 @@
 
         // Event type badge colours
         const EVENT_COLORS = {
-            plan_start:      '#cfe2ff',
-            plan_done:       '#d1e7dd',
-            execute_error:   '#f8d7da',
-            error:           '#f8d7da',
-            prewarm:         '#fff3cd',
-            health_check:    '#e2d9f3',
-            heartbeat_miss:  '#fde8d8',
-            startup:         '#d1e7dd',
+            plan_start: '#cfe2ff',
+            plan_done: '#d1e7dd',
+            execute_error: '#f8d7da',
+            error: '#f8d7da',
+            prewarm: '#fff3cd',
+            health_check: '#e2d9f3',
+            heartbeat_miss: '#fde8d8',
+            startup: '#d1e7dd',
         };
 
         async function fetchEvents() {
@@ -389,11 +389,11 @@
                         <td><small>${new Date(ev.ts * 1000).toLocaleTimeString()}</small></td>
                         <td><span class="badge" style="background:${bg};color:#333">${ev.event_type}</span></td>
                         <td><small>${ev.node_id || '-'}</small></td>
-                        <td><small style="font-family:monospace; word-break:break-all">${payloadStr.substring(0,120)}${payloadStr.length>120?'…':''}</small></td>
+                        <td><small style="font-family:monospace; word-break:break-all">${payloadStr.substring(0, 120)}${payloadStr.length > 120 ? '…' : ''}</small></td>
                     `;
                     tbody.appendChild(row);
                 });
-            } catch(e) { console.error(e); }
+            } catch (e) { console.error(e); }
         }
 
         function formatBytes(bytes, decimals = 2) {

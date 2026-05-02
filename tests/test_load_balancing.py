@@ -4,28 +4,17 @@ Tests for load balancing and multi-node task distribution
 import pytest
 from httpx import AsyncClient, ASGITransport
 from coordinator.main import app, task_history
-import time
-
-
-"""
-Tests for load balancing and multi-node task distribution
-"""
-import pytest
-from httpx import AsyncClient, ASGITransport
-from coordinator.main import app, task_history
-from coordinator.worker_pool import WorkerPool
-import ray
+from coordinator.worker_pool import AdaptiveWorkerPool
+from coordinator import db
 import time
 
 
 @pytest.mark.asyncio
 async def test_worker_pool_initialization():
-    """Test that WorkerPool initializes with correct number of workers"""
-    if not ray.is_initialized():
-        ray.init(namespace="llm-lab", ignore_reinit_error=True)
-    
-    pool = WorkerPool(num_workers=3)
-    assert pool.get_pool_size() == 3
+    """Test that AdaptiveWorkerPool starts in local mode."""
+    pool = AdaptiveWorkerPool(num_workers=3)
+    assert pool.get_pool_size() == 1
+    assert pool.is_local_mode() is True
     
     # Test that we can get workers
     worker1 = pool.get_next_worker()
@@ -39,20 +28,10 @@ async def test_worker_pool_initialization():
 
 @pytest.mark.asyncio
 async def test_round_robin_algorithm():
-    """Test that round-robin properly cycles through workers"""
-    if not ray.is_initialized():
-        ray.init(namespace="llm-lab", ignore_reinit_error=True)
-    
-    pool = WorkerPool(num_workers=2)
-    
-    # Get workers in sequence to verify round-robin
-    workers = [pool.get_next_worker() for _ in range(6)]
-    
-    # First and third should be the same (and 5th)
-    # Second and fourth should be the same (and 6th)
-    assert workers[0] == workers[2] == workers[4]
-    assert workers[1] == workers[3] == workers[5]
-    assert workers[0] != workers[1]
+    """Single-node mode should always hand back the local worker."""
+    pool = AdaptiveWorkerPool(num_workers=2)
+    workers = [pool.get_next_worker() for _ in range(3)]
+    assert workers[0] == workers[1] == workers[2]
 
 
 @pytest.mark.skip(reason="Parallel execution not yet implemented")
@@ -90,16 +69,18 @@ async def test_single_node_fallback():
 
 @pytest.mark.asyncio
 async def test_task_attribution_tracks_node():
-    """Test that task history correctly attributes work to nodes"""
-    # Add a mock task
+    """Persistent task history should expose inserted worker attribution."""
     mock_task = {
         "id": "test-load-balance",
+        "prompt": "load-balance test",
+        "status": "Success",
         "worker": "worker-123",
-        "final_node": "worker-123",
         "timestamp": time.time(),
-        "composition": {"worker-123": 100.0}
+        "duration": 0.1,
+        "plan_steps": 1,
+        "route_summary": "worker-123",
     }
-    task_history.insert(0, mock_task)
+    await db.upsert_task(mock_task)
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/tasks")
@@ -112,4 +93,3 @@ async def test_task_attribution_tracks_node():
     test_task = next((t for t in tasks if t["id"] == "test-load-balance"), None)
     assert test_task is not None
     assert test_task["worker"] == "worker-123"
-    assert test_task["composition"]["worker-123"] == 100.0

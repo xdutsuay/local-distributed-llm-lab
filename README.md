@@ -1,59 +1,32 @@
-# Local Distributed LLM Lab
+# Local Distributed LLM Lab: Turn Your Devices into an AI Cluster
 
-**A distributed cognition framework for local AI experiments.**
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://python.org)
+[![Status: Active](https://img.shields.io/badge/status-active-green.svg)]()
+[![Ollama Supported](https://img.shields.io/badge/Ollama-Supported-orange.svg)](https://ollama.com)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.12.2-blue.svg)
-![Status](https://img.shields.io/badge/status-active-green.svg)
-![Tests](https://img.shields.io/badge/tests-27%2F43%20passing-green.svg)
+**Local Distributed LLM Lab** is a lightweight, distributed cognition framework that orchestrates your local devices (Mac, Windows, Linux, and Mobile) into a unified, collaborative AI cluster. It enables **task-level parallelism** and **heterogeneous agent routing** without relying on cloud APIs.
 
-## 🚀 Overview
-**Local Distributed LLM Lab** orchestrates multiple local devices—laptops, desktops, and mobile phones—into a single collaborative AI cluster. Instead of sharding model weights, it focuses on **task-level parallelism** and **heterogeneous agents**.
+If your local LLMs are running slow or you want to combine the compute of multiple older devices, LLMLab coordinates task execution seamlessly using Ray and FastAPI.
 
-A Planner LLM decomposes complex queries into subtasks, which are routed to the most appropriate worker node.
+---
 
-## ✨ Current Features
+## 🚀 Key Features for Distributed AI
 
-### Core Capabilities
-- ✅ **Distributed Coordination** - Powered by Ray and FastAPI
-- ✅ **Multi-Node Support** - macOS ↔ Windows cross-platform
-- ✅ **Task Attribution** - Track which node processed each task
-- ✅ **Heartbeat System** - Auto-registration and TTL expiration
-- ✅ **Agentic Workflow** - LangGraph task decomposition
-- ✅ **Test Coverage** - 43 tests (27 passing, 16 future stubs)
+- **Multi-Node Task Parallelism**: Distribute LangGraph workflows across multiple machines in your local network.
+- **MicroGPT-Inspired Agents**: Features agent routing (Antigravity, Claude Code, Codex) using bounded contextual documents.
+- **Intelligent Load Balancing**: Automatically detects available Ollama models (prioritizing smaller models on limited RAM devices like M1 Macs) to prevent memory swap slowness.
+- **Real-Time Observability Dashboard**: Monitor node health, active micro-threads, and task route previews via a beautiful Web UI (`/llmlab`).
+- **Cross-Platform Compatibility**: Works seamlessly across macOS, Windows, and Linux.
 
-### Interfaces
-- 📊 **Dashboard** (`/llmlab`) - Real-time cluster status
-- 💬 **Chat UI** (`/chat_ui`) - Query interface
-- 📋 **Shared Clipboard** (`/memo`) - Cross-machine text transfer
+---
 
-## 🏗 Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│         Coordinator Node (Mac)              │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐ │
-│  │ FastAPI  │  │ LangGraph│  │Ray Head   │ │
-│  │ Planner  │  │ Workflow │  │Registry   │ │
-│  └──────────┘  └──────────┘  └───────────┘ │
-└─────────────────────────────────────────────┘
-           │                    │
-    Heartbeats (5s)      Task Distribution
-           │                    │
-    ┌──────┴────────┬───────────┴──────┐
-    │               │                  │
-┌───▼────┐    ┌────▼─────┐    ┌───────▼────┐
-│Worker 1│    │ Worker 2 │    │ Mobile PWA │
-│(Ollama)│    │ (Ollama) │    │ (planned)  │
-└────────┘    └──────────┘    └────────────┘
-```
-
-## 🛠 Quick Start
+## 🛠 Quick Start Guide
 
 ### Prerequisites
-- Python 3.12.2
+- Python 3.12+
 - [Ollama](https://ollama.com/) running locally
-- Ray 2.53.0+
+- Ray (2.53.0+)
 
 ### Installation
 ```bash
@@ -64,75 +37,37 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Start Coordinator (Machine 1)
+### Start the Coordinator (Primary Machine)
 ```bash
 ./scripts/start_coordinator.sh
-# Dashboard: http://localhost:8000/llmlab
+# Access the Dashboard at: http://localhost:8000/llmlab
 ```
 
-### Connect Worker (Machine 2)
+### Connect a Worker (Secondary Machine)
 ```bash
 ./scripts/start_worker.sh <COORDINATOR_IP>
 ```
 
-### Health Check
-```bash
-python scripts/health_check.py
-```
+---
 
-## 🧪 Testing
-```bash
-# All tests
-python -m pytest tests/
+## 📦 Download Executable Binary (Beta)
+To help diagnose if slowness is hardware-specific, we provide a pre-compiled executable binary in our **[GitHub Releases](../../releases)**. 
+Download the executable for your OS and run it instantly without configuring Python environments!
 
-# Active tests only
-python -m pytest tests/ -k "not skip"
-```
+---
 
-## 📁 Project Structure
-```
-LLMLAB/
-├── coordinator/      # Core orchestration (main, graph, worker, registry)
-├── frontend/         # HTML/JS interfaces  
-├── tests/           # 43 tests (routes, heartbeat, cluster, etc.)
-├── scripts/         # Startup & diagnostic utilities
-├── config/          # Configuration files
-├── docs/            # Documentation
-└── archive/         # Historical files
-```
+## 🏗 System Architecture
 
-## 🗺 Roadmap
+LLMLab utilizes a **Coordinator-Worker** topology:
+1. **Coordinator**: A central node running FastAPI and LangGraph. It plans tasks and routes them using the agent mesh configurations.
+2. **Workers**: Distributed nodes running Ollama (or AirLLM). Workers automatically self-register via a UDP/TCP heartbeat and execute sub-tasks over Ray IPC.
 
-### Completed
-- [x] Multi-node distributed execution
-- [x] LangGraph task orchestration
-- [x] Node registry & health monitoring
-- [x] Task attribution & composition
-- [x] Comprehensive test suite
-- [x] **Phase 10**: Prompt passing fix, round-robin load balancing, auto-detect Ollama model
+---
 
-### In Progress (Phase 11)
-- [ ] Mobile mesh integration
-- [ ] Tool execution framework
-- [ ] Distributed caching & replication
+## 🤝 Contributing & SEO Tags
+Contributions are highly welcome! Whether it's adding support for new inferencing backends like `vLLM` or expanding the mobile PWA features, check out the `tests/` and open issues.
 
-### Planned
-- [ ] **Phase 12**: Observability (timeline, metrics dashboard)
-- [ ] **Phase 13**: Advanced scheduling strategies
-
-## 🔧 Configuration
-
-### Environment Variables
-```bash
-export OLLAMA_MODEL=llama3.2  # Or mistral, gemma:2b, etc.
-export RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1
-```
-
-### Ray Namespace
-All nodes must connect to namespace: `llm-lab`
-
-## 🤝 Contributing
-Contributions welcome! See active issues and test coverage in `tests/`.
+**Keywords:** *Local LLM, Distributed AI, Ray cluster, LangGraph alternative, Self-hosted LLM, Ollama cluster, Multi-agent LLM framework, AI Agent Mesh, Python AI Orchestration.*
 
 ## 📜 License
-MIT License.
+Released under the [MIT License](LICENSE).

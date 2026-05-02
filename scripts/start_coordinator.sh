@@ -24,11 +24,26 @@ fi
 
 # Set environment variables
 export OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+LLMLAB_HOST=${LLMLAB_HOST:-0.0.0.0}
+LLMLAB_PORT=${LLMLAB_PORT:-8000}
+LAN_IP=$(python - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(('10.255.255.255', 1))
+    print(s.getsockname()[0])
+except Exception:
+    print('127.0.0.1')
+finally:
+    s.close()
+PY
+)
 
-echo "🌐 Starting coordinator on http://0.0.0.0:8000"
-echo "📊 Dashboard: http://localhost:8000/llmlab"
-echo "💬 Chat UI: http://localhost:8000/chat_ui"
+echo "🌐 Starting coordinator on http://${LLMLAB_HOST}:${LLMLAB_PORT}"
+echo "📊 Dashboard: http://localhost:${LLMLAB_PORT}/llmlab"
+echo "💬 Chat UI: http://localhost:${LLMLAB_PORT}/chat_ui"
+echo "📱 LAN Chat UI: http://${LAN_IP}:${LLMLAB_PORT}/chat_ui"
 echo ""
 
 # Start FastAPI server
-uvicorn coordinator.main:app --host 0.0.0.0 --port 8000
+uvicorn coordinator.main:app --host "${LLMLAB_HOST}" --port "${LLMLAB_PORT}"

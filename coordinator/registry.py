@@ -51,6 +51,38 @@ class NodeRegistry:
 
         return active
 
+    def active_node_count(self) -> int:
+        """Return count of nodes alive within TTL (used by adaptive dispatch)."""
+        now = time.time()
+        return sum(1 for d in self.nodes.values() if now - d["last_seen"] < self.ttl)
+
+    def count_nodes_with_capability(self, capability: str) -> int:
+        """Return count of active nodes advertising a given capability."""
+        active = self.get_active_nodes()
+        return sum(1 for node in active.values() if capability in node.get("capabilities", []))
+
+    def get_nodes_with_capability(self, capability: str) -> Dict[str, Dict[str, Any]]:
+        """Return active nodes keyed by node id for a given capability."""
+        active = self.get_active_nodes()
+        return {
+            node_id: node
+            for node_id, node in active.items()
+            if capability in node.get("capabilities", [])
+        }
+
+    def active_llm_node_count(self) -> int:
+        """Return count of active nodes that can do LLM inference."""
+        return self.count_nodes_with_capability("llm_inference")
+
+    def update_node_model(self, node_id: str, model: str) -> None:
+        """Update a node's cached model metadata after a swap."""
+        if node_id not in self.nodes:
+            return
+        self.nodes[node_id]["metadata"]["model"] = model
+        asyncio.ensure_future(
+            db.upsert_node({**self.nodes[node_id]["metadata"], "node_id": node_id, "model": model})
+        )
+
     async def perform_health_check(self):
         print(" Performing Smart Health Check...")
         active = self.get_active_nodes()

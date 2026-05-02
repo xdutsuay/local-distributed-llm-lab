@@ -91,6 +91,18 @@
             font-size: 0.8rem;
             margin-top: 5px;
         }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #555;
+            background: #fff8e1;
+        }
+
+        .contrib {
+            font-size: 0.9rem;
+            background: #eef6ff;
+            color: #234;
+        }
     </style>
 </head>
 
@@ -129,6 +141,32 @@
             });
             div.innerHTML = html;
             chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function appendServedBy(servedBy) {
+            if (!servedBy) return;
+            const browserNodes = servedBy.browser_micro_nodes || [];
+            const primary = servedBy.primary_node || 'local-worker';
+            const div = document.createElement('div');
+            div.className = 'message assistant meta';
+            div.innerHTML = `<strong>Served by:</strong> primary ${primary}${browserNodes.length ? `<br><strong>Browser micro-nodes:</strong> ${browserNodes.join(', ')}` : ''}`;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function appendBrowserContributions(contributions) {
+            if (!Array.isArray(contributions) || contributions.length === 0) return;
+            contributions.forEach(item => {
+                const keywords = Array.isArray(item.keywords) && item.keywords.length
+                    ? `<br><strong>Keywords:</strong> ${item.keywords.join(', ')}`
+                    : '';
+                const summary = item.summary || item.error || 'No summary';
+                const div = document.createElement('div');
+                div.className = 'message assistant contrib';
+                div.innerHTML = `<strong>Browser Micro Node ${item.node_id}</strong><br>${summary}${keywords}`;
+                chat.appendChild(div);
+            });
             chat.scrollTop = chat.scrollHeight;
         }
 
@@ -194,7 +232,12 @@
                 } else if (typeof answer === 'object') {
                     answer = JSON.stringify(answer, null, 2);
                 }
+                if (Array.isArray(data.plan) && data.plan.length) {
+                    appendPlan(data.plan);
+                }
                 appendMessage(answer, 'assistant');
+                appendServedBy(data.served_by);
+                appendBrowserContributions(data.browser_contributions);
 
             } catch (e) {
                 clearTimeout(timeoutId);

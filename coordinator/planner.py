@@ -7,18 +7,21 @@ from coordinator.profiler import profile
 
 class Planner:
     def __init__(self, model_name: str = None):
-        # Fallback chain: explicit param → env var → auto-detect → default
+        # Planner always uses Ollama. Resolution order:
+        # explicit param → PLANNER_MODEL → OLLAMA_MODEL → auto-detect → default
         if model_name:
             self.model_name = model_name
-        elif os.getenv("OLLAMA_MODEL"):
+        elif os.getenv("PLANNER_MODEL"):
+            self.model_name = os.getenv("PLANNER_MODEL")
+        elif os.getenv("OLLAMA_MODEL") and os.getenv("INFERENCE_BACKEND", "ollama") == "ollama":
             self.model_name = os.getenv("OLLAMA_MODEL")
         else:
             detected = detect_available_models()
             self.model_name = detected if detected else "qwen2.5-coder"
             if not detected:
-                print(f"ℹ️ Planner using default model: {self.model_name}")
-        
-        print(f"📋 Planner initialized with model: {self.model_name}")
+                print(f"\u2139\ufe0f Planner using default model: {self.model_name}")
+
+        print(f"\U0001f4cb Planner initialized with model: {self.model_name}")
 
     @profile
     def plan(self, user_query: str) -> List[Dict[str, Any]]:

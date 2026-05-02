@@ -11,7 +11,8 @@ from coordinator.profiler import profile
 def detect_available_models() -> Optional[str]:
     """
     Detect available Ollama models by running 'ollama list'.
-    Returns the first available model name, or None if detection fails.
+    Prefers smaller models like 'llama3.2' or 'phi3' if available to improve performance on machines with limited RAM.
+    Returns the selected model name, or None if detection fails.
     """
     try:
         result = subprocess.run(
@@ -23,16 +24,25 @@ def detect_available_models() -> Optional[str]:
         
         if result.returncode == 0:
             lines = result.stdout.strip().split('\n')
-            # Skip header line and get first model
+            models = []
             for line in lines[1:]:
                 if line.strip():
-                    # Model name is the first column
                     model_name = line.split()[0]
                     if ':' in model_name:
-                        # Remove tag suffix (e.g., "llama3.2:latest" -> "llama3.2")
                         model_name = model_name.split(':')[0]
-                    print(f"✓ Auto-detected Ollama model: {model_name}")
-                    return model_name
+                    models.append(model_name)
+                    
+            if models:
+                # Prefer smaller, faster models if they exist
+                preferred = ['llama3.2', 'phi3']
+                for p in preferred:
+                    if p in models:
+                        print(f"✓ Auto-detected optimal Ollama model: {p}")
+                        return p
+                
+                # Fallback to the first available model
+                print(f"✓ Auto-detected Ollama model: {models[0]}")
+                return models[0]
         
         print("⚠️ No Ollama models found via 'ollama list'")
         return None
@@ -94,7 +104,14 @@ class LLMWorker:
         self.generated_bytes = 0
         self.ip = self._get_ip()
         self.last_task = "Idle"
-        asyncio.create_task(self._heartbeat_loop())
+        self._heartbeat_started = False
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._heartbeat_loop())
+                self._heartbeat_started = True
+        except RuntimeError:
+            pass  # No event loop yet — heartbeat will start on first async call
 
     def list_models(self) -> List[str]:
         """List available models on this node"""
@@ -170,6 +187,11 @@ class LLMWorker:
 
     @profile
     async def generate(self, prompt: str) -> str:
+        # Start heartbeat lazily if it couldn't start in __init__
+        if not self._heartbeat_started:
+            asyncio.create_task(self._heartbeat_loop())
+            self._heartbeat_started = True
+
         self.last_task = f"Processing: {prompt[:20]}..."
         
         # Import cache manager
@@ -207,7 +229,13 @@ class LLMWorker:
                     # Cache successful response
                     cache.put(prompt, self.model_name, resp)
                     
-                    return resp
+                    return {
+                        "content": resp,
+                        "node_id": self.node_id,
+                        "model": self.model_name,
+                        "timestamp": time.time(),
+                        "cached": False
+                    }
                 else:
                     raise Exception(f"API Error: {response.text}")
 

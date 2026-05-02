@@ -1,11 +1,30 @@
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError:
+    class FastMCP:  # type: ignore[override]
+        def __init__(self, name: str):
+            self.name = name
+            self._tools = []
+
+        def tool(self):
+            def decorator(func):
+                self._tools.append(func)
+                return func
+            return decorator
+
+        async def list_tools(self):
+            return [tool.__name__ for tool in self._tools]
+
+        def run(self):
+            raise RuntimeError("FastMCP is not installed in this environment")
 import httpx
 import asyncio
+import os
 
 # Initialize FastMCP server
 mcp = FastMCP("LLM Lab")
 
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("LLM_LAB_API_URL", "http://localhost:8000")
 
 @mcp.tool()
 async def submit_task(prompt: str) -> str:

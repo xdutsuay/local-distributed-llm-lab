@@ -2,12 +2,9 @@ from typing import TypedDict, List, Dict, Any, Annotated
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 import operator
-import asyncio
-import ray
 from coordinator.planner import Planner
-from coordinator.worker import LLMWorker
-from coordinator.worker_pool import WorkerPool
-from coordinator import db
+from coordinator.worker_pool import AdaptiveWorkerPool
+from coordinator.db import log_event_sync
 import time
 
 # Define the state of the graph
@@ -20,10 +17,10 @@ class AgentState(TypedDict):
     execution_trace: Annotated[List[Dict[str, Any]], operator.add] # Detailed trace of execution
 
 class WorkflowManager:
-    def __init__(self, num_workers: int = 3):
+    def __init__(self, worker_pool: AdaptiveWorkerPool):
         self.planner = Planner()
         # Initialize worker pool for round-robin load balancing
-        self.worker_pool = WorkerPool(num_workers=num_workers)
+        self.worker_pool = worker_pool
         self.memory = MemorySaver()
         self.workflow = self._build_graph()
 
@@ -53,9 +50,7 @@ class WorkflowManager:
     def plan_node(self, state: AgentState):
         query = state["user_query"]
         print(f"Planning for: {query}")
-        asyncio.ensure_future(
-            db.log_event("plan_start", "coordinator", {"query": query[:200]})
-        )
+        log_event_sync("plan_start", "coordinator", {"query": query[:200]})
 
         # --- RAG Integration (Phase 13) ---
         from coordinator.memory import get_vector_store
@@ -70,9 +65,7 @@ class WorkflowManager:
             augmented_query = query
 
         plan = self.planner.plan(augmented_query)
-        asyncio.ensure_future(
-            db.log_event("plan_done", "coordinator", {"steps": len(plan)})
-        )
+        log_event_sync("plan_done", "coordinator", {"steps": len(plan)})
         return {"plan": plan, "current_step_index": 0}
 
     def execute_node(self, state: AgentState):
@@ -95,15 +88,11 @@ class WorkflowManager:
                 prompt = step.get("description", "")
                  
             try:
-                # Get next worker from pool using round-robin
-                worker = self.worker_pool.get_next_worker()
-                
                 start_exec = time.time()
-                response_ref = worker.generate.remote(prompt)
-                raw_result = ray.get(response_ref)
+                raw_result = self.worker_pool.execute_local_sync(prompt)
                 duration = time.time() - start_exec
-                
-                # Parse Result
+
+                # Parse result (local path already returns dict, Ray path may too)
                 if isinstance(raw_result, dict):
                     result = raw_result.get("content", "")
                     self.last_worker_id = raw_result.get("node_id", "unknown")
@@ -115,9 +104,9 @@ class WorkflowManager:
                 result = f"Error: {str(e)}"
                 self.last_worker_id = "error"
                 duration = 0
-                asyncio.ensure_future(
-                    db.log_event("execute_error", "coordinator",
-                                 {"step": idx + 1, "error": str(e), "description": step.get("description", "")})
+                log_event_sync(
+                    "execute_error", "coordinator",
+                    {"step": idx + 1, "error": str(e), "description": step.get("description", "")}
                 )
             
             trace_entry = {
@@ -142,7 +131,12 @@ class WorkflowManager:
         return "end"
 
     async def run(self, query: str):
-        inputs = {"user_query": query, "results": [], "current_step_index": 0, "execution_trace": []}
+        inputs = {
+            "user_query": query,
+            "results": [],
+            "current_step_index": 0,
+            "execution_trace": [],
+        }
         # Using a fixed thread_id for this simple phase
         config = {"configurable": {"thread_id": "1"}}
         
@@ -155,7 +149,12 @@ class WorkflowManager:
         return "Workflow completed."
         
     async def invoke(self, query: str):
-        inputs = {"user_query": query, "results": [], "current_step_index": 0, "execution_trace": []}
+        inputs = {
+            "user_query": query,
+            "results": [],
+            "current_step_index": 0,
+            "execution_trace": [],
+        }
         config = {"configurable": {"thread_id": "1", "checkpoint_ns": "checkpoints"}}
         
         result = await self.workflow.ainvoke(inputs, config=config)

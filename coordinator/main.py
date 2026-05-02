@@ -8,6 +8,12 @@ from coordinator.graph import WorkflowManager
 from coordinator.registry import NodeRegistry
 from coordinator.messaging import RayMessageBus, ClusterEvents
 from coordinator.tools.registry import get_tool_registry
+from coordinator.worker_pool import AdaptiveWorkerPool
+from coordinator.browser_micro import (
+    build_browser_microtask_code,
+    normalize_browser_contribution,
+    summarize_served_by,
+)
 from coordinator import db
 import asyncio
 import json
@@ -33,7 +39,8 @@ else:
 
 
 # Globals
-workflow_manager = WorkflowManager()
+worker_pool = AdaptiveWorkerPool()           # adaptive: local on 1 node, Ray on 2+
+workflow_manager = WorkflowManager(worker_pool=worker_pool)
 message_bus = RayMessageBus()
 registry = NodeRegistry(message_bus)
 tool_registry = get_tool_registry()
@@ -76,6 +83,8 @@ async def startup_event():
     # Init SQLite DB first (all other components log to it)
     await db.init_db()
     await registry.start()
+    # Wire registry into the pool so @ray_required can read node count
+    worker_pool.set_registry(registry)
     print(f"🔧 Tool Registry initialized with {len(tool_registry.tools)} tools")
     asyncio.create_task(coordinator_heartbeat_loop())
     print(f"✅ Coordinator registered as node: {coordinator_node_id}")
@@ -131,6 +140,7 @@ class ConnectionManager:
     def __init__(self):
         # node_id -> WebSocket
         self.active_connections: Dict[str, WebSocket] = {}
+        self.pending_tasks: Dict[str, asyncio.Future] = {}
 
     async def connect(self, node_id: str, websocket: WebSocket):
         await websocket.accept()
@@ -147,6 +157,60 @@ class ConnectionManager:
             await self.active_connections[node_id].send_text(json.dumps(message))
             return True
         return False
+
+    def resolve_task_result(self, message: Dict[str, Any]) -> bool:
+        task_id = message.get("task_id")
+        future = self.pending_tasks.pop(task_id, None)
+        if not future or future.done():
+            return False
+        future.set_result(message)
+        return True
+
+    def connected_node_ids(self) -> List[str]:
+        return list(self.active_connections.keys())
+
+    async def dispatch_task(
+        self,
+        node_id: str,
+        code: str,
+        timeout_seconds: float = 4.0,
+    ) -> Dict[str, Any]:
+        task_id = str(uuid.uuid4())
+        payload = {
+            "type": ClusterEvents.EXECUTE_TASK,
+            "task_id": task_id,
+            "code": code,
+            "timestamp": time.time(),
+        }
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self.pending_tasks[task_id] = future
+
+        success = await self.send_personal_message(payload, node_id)
+        if not success:
+            self.pending_tasks.pop(task_id, None)
+            return {
+                "task_id": task_id,
+                "node_id": node_id,
+                "status": "offline",
+                "response": None,
+                "error": "Node not connected via WebSocket",
+            }
+
+        try:
+            result = await asyncio.wait_for(future, timeout=timeout_seconds)
+            result["node_id"] = node_id
+            return result
+        except asyncio.TimeoutError:
+            self.pending_tasks.pop(task_id, None)
+            return {
+                "task_id": task_id,
+                "node_id": node_id,
+                "status": "timeout",
+                "response": None,
+                "error": "Timed out waiting for browser node result",
+            }
 
 manager = ConnectionManager()
 
@@ -178,6 +242,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if "response" in message and "task_id" in message:
                 # This is a Task Result
                 print(f"📩 Received Task Result from {node_id}: {message['task_id']}")
+                manager.resolve_task_result(message)
                 await message_bus.publish(ClusterEvents.TASK_RESULT, message)
             else:
                 # Assume Heartbeat
@@ -197,6 +262,38 @@ class ChatRequest(BaseModel):
     prompt: str
     client_id: str = "unknown"
     model: str = "llama3.2"
+
+
+async def collect_browser_micro_contributions(prompt: str) -> List[Dict[str, Any]]:
+    browser_nodes = registry.get_nodes_with_capability("javascript_execution")
+    if not browser_nodes:
+        return []
+
+    code = build_browser_microtask_code(prompt)
+    tasks = [
+        manager.dispatch_task(node_id, code)
+        for node_id in browser_nodes.keys()
+        if node_id in manager.active_connections
+    ]
+    if not tasks:
+        return []
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    normalized: List[Dict[str, Any]] = []
+    for result in results:
+        if isinstance(result, Exception):
+            normalized.append({
+                "node_id": "unknown",
+                "status": "error",
+                "kind": "browser_microgpt",
+                "summary": "",
+                "keywords": [],
+                "clauses": [],
+                "error": str(result),
+            })
+            continue
+        normalized.append(normalize_browser_contribution(result.get("node_id", "unknown"), result))
+    return normalized
 
 @app.get("/api/nodes")
 async def get_nodes_json():
@@ -218,10 +315,13 @@ async def get_chat_ui():
 @app.post("/chat")
 @profile
 async def chat(request: ChatRequest):
+    browser_contrib_task = None
     try:
         start_time = time.time()
+        browser_contrib_task = asyncio.create_task(collect_browser_micro_contributions(request.prompt))
         # Route task through LangGraph
         result = await workflow_manager.invoke(request.prompt)
+        browser_contributions = await browser_contrib_task
         
         # Parse plan for route details
         plan = result.get("plan", [])
@@ -250,7 +350,7 @@ async def chat(request: ChatRequest):
                 parts.append(f"{nid.split('-')[-1]}:{pct}%")
             comp_str = ", ".join(parts)
             
-        final_node = "Distributed"
+        final_node = "local-worker"
         if trace:
             final_node = trace[-1].get("node_id", "Unknown")
 
@@ -285,9 +385,13 @@ async def chat(request: ChatRequest):
         return {
             "response": result["results"],
             "plan": result["plan"],
-            "worker": "distributed-graph"
+            "worker": "distributed-graph",
+            "browser_contributions": browser_contributions,
+            "served_by": summarize_served_by(final_node, browser_contributions),
         }
     except Exception as e:
+        if browser_contrib_task is not None and not browser_contrib_task.done():
+            browser_contrib_task.cancel()
         err_entry = {
             "id": str(uuid.uuid4()),
             "prompt": request.prompt,
@@ -392,7 +496,7 @@ class MemoryItem(BaseModel):
     text: str
     metadata: Dict[str, Any] = {}
 
-@app.post("/api/memo")
+@app.post("/api/memory")
 async def add_memory(item: MemoryItem):
     """Add a new item to the vector memory"""
     from coordinator.memory import get_vector_store
