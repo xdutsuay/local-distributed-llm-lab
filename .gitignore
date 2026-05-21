@@ -18,3 +18,7 @@ data/llmlab.db
 data/chroma_db/
 *.spec
 picoclawexperiment/
+
+# Local IDE / scratch
+.vscode/
+scratch/

@@ -1,89 +1,181 @@
-# Local Distributed LLM Lab: Turn Your Devices into an AI Cluster
+# LLMLAB — Local Distributed LLM Lab
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://python.org)
-[![Status: Active](https://img.shields.io/badge/status-active-green.svg)]()
-[![Ollama Supported](https://img.shields.io/badge/Ollama-Supported-orange.svg)](https://ollama.com)
+**Turn your Mac, PC, Linux box, and Android phone into one local AI cluster** — no cloud API keys, no vendor lock-in. LLMLAB coordinates inference with [Ray](https://www.ray.io/), plans work with [LangGraph](https://www.langchain.com/langgraph), and routes tasks across [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), and optional mobile compute nodes.
 
-**Local Distributed LLM Lab** is a lightweight, distributed cognition framework that orchestrates your local devices (Mac, Windows, Linux, and Mobile) into a unified, collaborative AI cluster. It enables **task-level parallelism** and **heterogeneous agent routing** without relying on cloud APIs.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org)
+[![Tests](https://img.shields.io/badge/tests-pytest-green.svg)](tests/)
+[![Ray](https://img.shields.io/badge/Ray-distributed-purple.svg)](https://www.ray.io/)
+[![Ollama](https://img.shields.io/badge/Ollama-supported-orange.svg)](https://ollama.com)
+[![LM Studio](https://img.shields.io/badge/LM%20Studio-supported-teal.svg)](https://lmstudio.ai)
 
-If your local LLMs are running slow or you want to combine the compute of multiple older devices, LLMLab coordinates task execution seamlessly using Ray and FastAPI.
-
----
-
-## 🚀 Key Features for Distributed AI
-
-- **Multi-Node Task Parallelism**: Distribute LangGraph workflows across multiple machines in your local network.
-- **MicroGPT-Inspired Agents**: Features agent routing (Antigravity, Claude Code, Codex) using bounded contextual documents.
-- **Intelligent Load Balancing**: Automatically detects available Ollama models (prioritizing smaller models on limited RAM devices like M1 Macs) to prevent memory swap slowness.
-- **Real-Time Observability Dashboard**: Monitor node health, active micro-threads, and task route previews via a beautiful Web UI (`/llmlab`).
-- **Cross-Platform Compatibility**: Works seamlessly across macOS, Windows, and Linux.
+> **Stable v1 (2026-05-21):** Regression gate, LM Studio/Gemma path, Android compute node, dashboard observability. See [STATUS.md](STATUS.md) and [docs/plans/](docs/plans/).
 
 ---
 
-## 🛠 Quick Start Guide
+## Why LLMLAB?
+
+| Problem | LLMLAB approach |
+|---------|-----------------|
+| One machine is slow | **Task-level parallelism** across LAN nodes via Ray |
+| Ollama cold-start / swap pain | Dashboard + **SQLite event log** + health scripts |
+| No visibility into routing | **Live dashboard** (`/llmlab`) — nodes, tasks, composition |
+| IDE agents can't operate the cluster | **MCP server** (planned) — Cursor tools over REST APIs |
+| Mobile idle compute | **Android compute node** — WebSocket worker on your phone |
+
+**Keywords:** local LLM cluster, self-hosted AI, distributed inference, Ollama cluster, LangGraph orchestration, Ray Python cluster, multi-agent routing, LM Studio Gemma, open-source LLM orchestration, homelab AI.
+
+---
+
+## Features
+
+- **Multi-node LangGraph workflows** — planner decomposes prompts; workers execute in parallel where possible  
+- **Adaptive worker pool** — local inference on one GPU; Ray dispatch when multiple nodes are alive  
+- **MicroGPT-style context** — bounded metadata injected before worker calls  
+- **Provider switch** — Ollama or LM Studio from the dashboard (`INFERENCE_BACKEND`)  
+- **SQLite persistence** — tasks, nodes, and operational events survive restarts  
+- **Android compute node** — Kotlin + Compose app; heartbeats and `execute_task` over WebSocket  
+- **Regression gate** — 10-step release checklist ([`tests/test_regression_gate.py`](tests/test_regression_gate.py))  
+
+---
+
+## Quick start (5 minutes)
 
 ### Prerequisites
-- Python 3.12+
-- [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) running locally
-- Ray (2.53.0+)
 
-### LM Studio + Gemma (local speed testing)
-```bash
-# In LM Studio: load Gemma, start local server (default http://127.0.0.1:1234)
-export INFERENCE_BACKEND=lmstudio
-export LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1
-./scripts/start_coordinator.sh
-# Dashboard: http://localhost:8000/llmlab — select LM Studio provider
-```
+- Python **3.12+**
+- [Ollama](https://ollama.com) *or* [LM Studio](https://lmstudio.ai) with a loaded model  
+- Optional: Ray (`pip install -r requirements.txt` includes `ray[default]`)
 
-### Android compute node
-```bash
-cd android-compute-node && ./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
-# Point app Settings to coordinator IP; WebSocket: ws://<ip>:8000/ws/join
-```
+### Install
 
-### Installation
 ```bash
 git clone https://github.com/xdutsuay/local-distributed-llm-lab.git
 cd local-distributed-llm-lab
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Start the Coordinator (Primary Machine)
+### Verify tests (no GPU required)
+
 ```bash
-./scripts/start_coordinator.sh
-# Access the Dashboard at: http://localhost:8000/llmlab
+PYTHONPATH=. pytest tests/test_regression_gate.py -m "not live" -q
 ```
 
-### Connect a Worker (Secondary Machine)
+### Run coordinator
+
+```bash
+./scripts/start_coordinator.sh
+```
+
+| URL | Purpose |
+|-----|---------|
+| http://localhost:8000/llmlab | Cluster dashboard |
+| http://localhost:8000/chat_ui | Chat UI |
+| http://localhost:8000/health | Health check |
+
+### LM Studio + Gemma (recommended for speed tests)
+
+```bash
+# In LM Studio: load a model (e.g. Gemma), start server on http://127.0.0.1:1234
+export INFERENCE_BACKEND=lmstudio
+export LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1
+./scripts/start_coordinator.sh
+```
+
+### Connect a worker (second machine)
+
 ```bash
 ./scripts/start_worker.sh <COORDINATOR_IP>
 ```
 
----
+### Android compute node
 
-## 📦 Download Executable Binary (Beta)
-To help diagnose if slowness is hardware-specific, we provide a pre-compiled executable binary in our **[GitHub Releases](../../releases)**. 
-Download the executable for your OS and run it instantly without configuring Python environments!
-
----
-
-## 🏗 System Architecture
-
-LLMLab utilizes a **Coordinator-Worker** topology:
-1. **Coordinator**: A central node running FastAPI and LangGraph. It plans tasks and routes them using the agent mesh configurations.
-2. **Workers**: Distributed nodes running Ollama (or AirLLM). Workers automatically self-register via a UDP/TCP heartbeat and execute sub-tasks over Ray IPC.
+```bash
+cd android-compute-node && ./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+# Settings → coordinator IP → ws://<ip>:8000/ws/join
+```
 
 ---
 
-## 🤝 Contributing & SEO Tags
-Contributions are highly welcome! Whether it's adding support for new inferencing backends like `vLLM` or expanding the mobile PWA features, check out the `tests/` and open issues.
+## Architecture
 
-**Keywords:** *Local LLM, Distributed AI, Ray cluster, LangGraph alternative, Self-hosted LLM, Ollama cluster, Multi-agent LLM framework, AI Agent Mesh, Python AI Orchestration.*
+```mermaid
+flowchart TB
+  subgraph clients [Clients]
+    UI[Dashboard_and_Chat]
+    Android[Android_Node]
+    MCP[MCP_Server_Cursor]
+  end
+  subgraph coord [Coordinator_FastAPI]
+    Chat[POST_chat]
+    Registry[NodeRegistry]
+    Graph[WorkflowManager]
+    Pool[AdaptiveWorkerPool]
+  end
+  subgraph inference [Inference]
+    Ollama[Ollama]
+    LMStudio[LM_Studio]
+  end
+  UI --> Chat
+  Android --> Registry
+  MCP --> Chat
+  Chat --> Graph --> Pool
+  Pool --> Ollama
+  Pool --> LMStudio
+```
 
-## 📜 License
-Released under the [MIT License](LICENSE).
+Deep dive: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/COMPONENTS.md](docs/COMPONENTS.md)
+
+---
+
+## Contributing
+
+We welcome PRs for tests, inference paths, Android protocol alignment, and MCP tooling.
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md)  
+2. Pick a plan in [docs/plans/](docs/plans/)  
+3. Run `pytest tests/test_regression_gate.py -m "not live" -q` before opening a PR  
+
+**Help wanted:** MCP cluster tools · streaming chat UI · Phase 13 RAG · vLLM backend · docs and reproduction scripts.
+
+---
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [STATUS.md](STATUS.md) | Current release status |
+| [NEXT_STEPS.md](NEXT_STEPS.md) | Maintainer handoff and inference milestones |
+| [REGRESSION_LOG.md](REGRESSION_LOG.md) | Gate and live smoke results |
+| [docs/plans/](docs/plans/) | Stable v1 + MCP extension plans |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Phases 12–16+ |
+| [docs/TESTING.md](docs/TESTING.md) | Test layout and commands |
+
+---
+
+## MCP server (Cursor / Claude Desktop)
+
+Thin bridge for IDE agents ([`mcp_server.py`](mcp_server.py)). Planned tools: `cluster_health`, `list_nodes`, `submit_chat`, model swap, cache stats. See [docs/plans/EXTEND_MCP_SERVER.md](docs/plans/EXTEND_MCP_SERVER.md).
+
+Example config: [config/claude_config_example.json](config/claude_config_example.json)
+
+---
+
+## Releases
+
+Pre-built binaries (beta): [GitHub Releases](https://github.com/xdutsuay/local-distributed-llm-lab/releases)
+
+---
+
+## License
+
+[MIT License](LICENSE) — use, fork, and ship commercially with attribution.
+
+---
+
+## Star history
+
+If LLMLAB saves you cloud API costs or speeds up local experiments, **star the repo** and open an issue with your setup (OS, GPU, backend). That helps others find a working path faster.

@@ -32,6 +32,15 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 ./scripts/health_check.py
 ```
 
+## Live validation (2026-05-21)
+
+- LM Studio `google/gemma-4-e2b` on `:1234` — OK
+- Dashboard + provider swap — OK
+- `POST /chat` — OK (~65s cold; multi-step LangGraph)
+- Chat UI — OK; answer appears when **`fetch('/chat')` completes** (~23s observed). UI has no streaming; timer shows elapsed seconds while waiting.
+
+**Docs:** Plans in `docs/plans/`; contributor guide in `CONTRIBUTING.md`
+
 ## Remaining (post–stable v1)
 
 - Phase 13 RAG (ChromaDB planner integration) — deferred
