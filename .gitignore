@@ -11,3 +11,10 @@ ollama.log
 # Generated data
 server_data/
 .pytest_cache/
+build/
+dist/
+graphify-out/
+data/llmlab.db
+data/chroma_db/
+*.spec
+picoclawexperiment/

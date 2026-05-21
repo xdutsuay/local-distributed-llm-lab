@@ -15,30 +15,32 @@ async def test_dashboard_api_structure():
 @pytest.mark.asyncio
 async def test_task_attribution_fields():
     """Verify that task history has fields for attribution (worker, final_node)."""
-    # Simulate a task entry manually since we don't want to run a full Ray task here
-    from coordinator.main import task_history
+    from coordinator import db
     import time
-    
+
     mock_task = {
-        "id": "test-1",
+        "id": "polish-attribution-test-1",
+        "prompt": "attribution probe",
+        "status": "Success",
         "worker": "test-worker-node",
         "final_node": "executor-1",
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "composition": {"executor-1": 1.0},
+        "route_details": [{"node_id": "executor-1", "duration": 0.1}],
     }
-    task_history.append(mock_task)
-    
+    await db.upsert_task(mock_task)
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/tasks")
-        
+
     assert response.status_code == 200
     data = response.json()
     tasks = data["tasks"]
-    assert len(tasks) > 0
-    latest = tasks[-1]
-    assert "worker" in latest
-    assert "final_node" in latest
-    # New Phase 10 fields
-    if "execution_trace" in latest:
-        assert isinstance(latest["execution_trace"], list)
-    if "composition" in latest:
-         assert isinstance(latest["composition"], dict)
+    match = next((t for t in tasks if t["id"] == "polish-attribution-test-1"), None)
+    assert match is not None
+    assert match.get("worker") == "test-worker-node"
+    assert match.get("final_node") == "executor-1"
+    if "execution_trace" in match:
+        assert isinstance(match["execution_trace"], list)
+    if "composition" in match:
+        assert isinstance(match["composition"], dict)

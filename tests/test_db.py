@@ -11,21 +11,28 @@ import time
 import pytest
 import pytest_asyncio
 
-# Override DB_PATH to a temp file before importing db
-_tmp = tempfile.mktemp(suffix=".db")
-
+# Save original DB_PATH
 import coordinator.db as db
-db.DB_PATH = _tmp  # redirect all writes to the temp DB
+original_db_path = getattr(db, "DB_PATH", "data/llmlab.db")
 
+@pytest.fixture(scope="module", autouse=True)
+def restore_db_path():
+    yield
+    db.DB_PATH = original_db_path
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="function")
 async def fresh_db():
     """Create a fresh DB before each test, clean up after."""
+    old_path = db.DB_PATH
     db.DB_PATH = tempfile.mktemp(suffix=".db")
     await db.init_db()
     yield
     if os.path.exists(db.DB_PATH):
-        os.remove(db.DB_PATH)
+        try:
+            os.remove(db.DB_PATH)
+        except Exception:
+            pass
+    db.DB_PATH = old_path
 
 
 # ---------------------------------------------------------------------------

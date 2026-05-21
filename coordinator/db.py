@@ -73,6 +73,15 @@ async def init_db() -> None:
         await db.execute(_CREATE_TASKS)
         await db.execute(_CREATE_NODES)
         await db.execute(_CREATE_EVENTS)
+        for col, typedef in (
+            ("final_node", "TEXT"),
+            ("composition", "TEXT"),
+            ("route_details", "TEXT"),
+        ):
+            try:
+                await db.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass
         await db.commit()
     print(f"✅ SQLite DB ready at {DB_PATH}")
 
@@ -88,8 +97,9 @@ async def upsert_task(entry: Dict[str, Any]) -> None:
             """
             INSERT INTO tasks
                 (id, prompt, status, worker, plan_steps, duration_ms,
-                 route_summary, error, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 route_summary, error, created_at, updated_at,
+                 final_node, composition, route_details)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 status        = excluded.status,
                 worker        = excluded.worker,
@@ -97,7 +107,10 @@ async def upsert_task(entry: Dict[str, Any]) -> None:
                 duration_ms   = excluded.duration_ms,
                 route_summary = excluded.route_summary,
                 error         = excluded.error,
-                updated_at    = excluded.updated_at
+                updated_at    = excluded.updated_at,
+                final_node    = excluded.final_node,
+                composition   = excluded.composition,
+                route_details = excluded.route_details
             """,
             (
                 entry.get("id", str(uuid.uuid4())),
@@ -110,6 +123,9 @@ async def upsert_task(entry: Dict[str, Any]) -> None:
                 entry.get("error", ""),
                 entry.get("timestamp", now),
                 now,
+                entry.get("final_node", ""),
+                json.dumps(entry.get("composition", {})),
+                json.dumps(entry.get("route_details", [])),
             ),
         )
         await db.commit()
@@ -122,7 +138,22 @@ async def get_tasks(limit: int = 100) -> List[Dict[str, Any]]:
             "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
         ) as cursor:
             rows = await cursor.fetchall()
-    return [dict(r) for r in rows]
+    tasks = []
+    for r in rows:
+        row = dict(r)
+        if row.get("composition"):
+            try:
+                row["composition"] = json.loads(row["composition"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if row.get("route_details"):
+            try:
+                row["route_details"] = json.loads(row["route_details"])
+                row["execution_trace"] = row["route_details"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        tasks.append(row)
+    return tasks
 
 # ---------------------------------------------------------------------------
 # Nodes

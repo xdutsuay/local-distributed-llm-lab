@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from typing import Dict, Any, List, Optional
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import ray
 from coordinator.graph import WorkflowManager
@@ -89,10 +89,24 @@ async def startup_event():
     asyncio.create_task(coordinator_heartbeat_loop())
     print(f"✅ Coordinator registered as node: {coordinator_node_id}")
     asyncio.create_task(_prewarm_model())
+    _init_distributed_cache()
     await db.log_event("startup", coordinator_node_id, {"tools": len(tool_registry.tools)})
+
+
+def _init_distributed_cache():
+    """Register DistributedCacheActor when Ray is available (no-op in RAY_MOCK_MODE)."""
+    try:
+        from coordinator.cache_manager import get_cache_manager
+        get_cache_manager()
+    except Exception as e:
+        print(f"⚠️ Distributed cache init skipped: {e}")
 
 async def _prewarm_model():
     """Background task to pre-load the model into VRAM on startup."""
+    if os.getenv("RAY_MOCK_MODE") or os.getenv("TESTING"):
+        print("🧪 Test environment detected — skipping model pre-warming.")
+        return
+
     backend = os.getenv("INFERENCE_BACKEND", "ollama").lower()
     if backend == "airllm":
         print("ℹ️  AirLLM backend selected — model loads lazily on first request, skipping pre-warm.")
@@ -402,7 +416,17 @@ async def chat(request: ChatRequest):
         asyncio.create_task(db.upsert_task(err_entry))
         asyncio.create_task(db.log_event("error", "coordinator", {"prompt": request.prompt, "error": str(e)}))
         task_history.insert(0, err_entry)
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=503,
+            content={
+                "response": [],
+                "plan": [],
+                "worker": "error",
+                "error": str(e),
+                "browser_contributions": [],
+                "served_by": {"primary_node": "error", "browser_micro_nodes": [], "browser_micro_count": 0},
+            },
+        )
 
 @app.get("/api/tasks")
 async def get_tasks():
@@ -443,6 +467,43 @@ async def add_memo(req: MemoRequest):
     if len(memo_storage) > 50: 
         memo_storage.pop()
     return {"status": "ok"}
+
+# --- Provider Selection API ---
+class ProviderRequest(BaseModel):
+    provider: str
+
+@app.post("/api/provider")
+async def set_provider(req: ProviderRequest):
+    import os
+    import subprocess
+    import requests
+    
+    os.environ["INFERENCE_BACKEND"] = req.provider
+    try:
+        worker_pool._local_worker.backend = req.provider
+    except:
+        pass
+        
+    if req.provider == "ollama":
+        try:
+            r = requests.get("http://127.0.0.1:11434/api/tags", timeout=1)
+            if r.status_code == 200:
+                return {"status": "ok", "message": "Ollama already running"}
+        except:
+            pass
+        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"status": "ok", "message": "Ollama started in background"}
+    elif req.provider == "lmstudio":
+        try:
+            r = requests.get("http://127.0.0.1:1234/v1/models", timeout=1)
+            if r.status_code == 200:
+                return {"status": "ok", "message": "LM Studio already running"}
+        except:
+            pass
+        subprocess.Popen(["lms", "server", "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"status": "ok", "message": "LM Studio started in background"}
+        
+    return {"status": "error", "message": "Unknown provider"}
 
 # --- Tool Execution API ---
 @app.get("/api/tools")

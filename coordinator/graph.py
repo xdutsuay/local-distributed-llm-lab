@@ -4,8 +4,9 @@ from langgraph.checkpoint.memory import MemorySaver
 import operator
 from coordinator.planner import Planner
 from coordinator.worker_pool import AdaptiveWorkerPool
-from coordinator.db import log_event_sync
+from coordinator.db import log_event
 import time
+import asyncio
 
 # Define the state of the graph
 class AgentState(TypedDict):
@@ -47,15 +48,15 @@ class WorkflowManager:
 
         return workflow.compile(checkpointer=self.memory)
 
-    def plan_node(self, state: AgentState):
+    async def plan_node(self, state: AgentState):
         query = state["user_query"]
         print(f"Planning for: {query}")
-        log_event_sync("plan_start", "coordinator", {"query": query[:200]})
+        await log_event("plan_start", "coordinator", {"query": query[:200]})
 
         # --- RAG Integration (Phase 13) ---
         from coordinator.memory import get_vector_store
         memory = get_vector_store()
-        context_docs = memory.search(query)
+        context_docs = await asyncio.to_thread(memory.search, query)
         context_str = "\n".join([f"- {doc}" for doc in context_docs])
 
         if context_str:
@@ -64,11 +65,11 @@ class WorkflowManager:
         else:
             augmented_query = query
 
-        plan = self.planner.plan(augmented_query)
-        log_event_sync("plan_done", "coordinator", {"steps": len(plan)})
+        plan = await asyncio.to_thread(self.planner.plan, augmented_query)
+        await log_event("plan_done", "coordinator", {"steps": len(plan)})
         return {"plan": plan, "current_step_index": 0}
 
-    def execute_node(self, state: AgentState):
+    async def execute_node(self, state: AgentState):
         plan = state["plan"]
         idx = state["current_step_index"]
         
@@ -89,7 +90,7 @@ class WorkflowManager:
                  
             try:
                 start_exec = time.time()
-                raw_result = self.worker_pool.execute_local_sync(prompt)
+                raw_result = await self.worker_pool.execute(prompt)
                 duration = time.time() - start_exec
 
                 # Parse result (local path already returns dict, Ray path may too)
@@ -104,7 +105,7 @@ class WorkflowManager:
                 result = f"Error: {str(e)}"
                 self.last_worker_id = "error"
                 duration = 0
-                log_event_sync(
+                await log_event(
                     "execute_error", "coordinator",
                     {"step": idx + 1, "error": str(e), "description": step.get("description", "")}
                 )
@@ -141,7 +142,7 @@ class WorkflowManager:
         config = {"configurable": {"thread_id": "1"}}
         
         final_state = None
-        for event in self.workflow.stream(inputs, config=config):
+        async for event in self.workflow.astream(inputs, config=config):
             for key, value in event.items():
                 print(f"Finished {key}: {value.keys()}")
                 final_state = value # Keep tracking the latest state updates

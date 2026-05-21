@@ -1,10 +1,11 @@
 """
 Cache Manager for Distributed LLM Response Caching
 
-Uses Ray's object store for distributed caching of LLM responses
+Uses Ray's object store and named actors for distributed caching of LLM responses
 to avoid redundant API calls and reduce latency.
 """
 import hashlib
+import os
 import time
 from typing import Optional, Dict, Any
 import ray
@@ -30,9 +31,7 @@ class CacheEntry:
 
 class CacheManager:
     """
-    Distributed cache manager for LLM responses.
-    
-    Uses Ray's object store for distributed access across workers.
+    Local / in-process cache manager for LLM responses.
     Implements TTL-based expiration and tracks cache statistics.
     """
     
@@ -181,12 +180,136 @@ class CacheManager:
         return len(expired_keys)
 
 
-# Global cache manager instance
+@ray.remote(num_cpus=0)
+class DistributedCacheActor:
+    """Ray Actor for holding the shared cache across all workers"""
+    def __init__(self, default_ttl: int = 3600):
+        self.manager = CacheManager(default_ttl=default_ttl)
+        
+    def get(self, prompt: str, model: str, **params) -> Optional[str]:
+        return self.manager.get(prompt, model, **params)
+        
+    def put(self, prompt: str, model: str, response: str, ttl: Optional[int] = None, **params) -> None:
+        self.manager.put(prompt, model, response, ttl, **params)
+        
+    def invalidate(self, prompt: str, model: str, **params) -> bool:
+        return self.manager.invalidate(prompt, model, **params)
+        
+    def clear(self) -> None:
+        self.manager.clear()
+        
+    def get_stats(self) -> Dict[str, Any]:
+        return self.manager.get_stats()
+        
+    def cleanup_expired(self) -> int:
+        return self.manager.cleanup_expired()
+
+
+class DistributedCacheClient:
+    """
+    Unified client that delegates cache queries to the Ray CacheActor (if active),
+    or falls back to a local in-process CacheManager singleton.
+    """
+    def __init__(self, default_ttl: int = 3600):
+        self.default_ttl = default_ttl
+        self._local_manager = CacheManager(default_ttl=default_ttl)
+        self._actor_ref = None
+
+    def _get_actor(self) -> Optional[Any]:
+        # Unit tests mock Ray with MagicMock actors — always use local cache.
+        if os.getenv("RAY_MOCK_MODE"):
+            return None
+
+        if not ray.is_initialized():
+            return None
+        
+        if self._actor_ref is not None:
+            return self._actor_ref
+            
+        try:
+            # Look up named detached actor
+            self._actor_ref = ray.get_actor("CacheActor", namespace="llm-lab")
+            return self._actor_ref
+        except ValueError:
+            # Ray is initialized but named CacheActor doesn't exist yet
+            try:
+                # Try to create it as a named detached actor
+                self._actor_ref = DistributedCacheActor.options(
+                    name="CacheActor",
+                    namespace="llm-lab",
+                    lifetime="detached"
+                ).remote(default_ttl=self.default_ttl)
+                print("🚀 Registered new shared DistributedCacheActor in 'llm-lab' namespace.")
+                return self._actor_ref
+            except Exception as e:
+                # Fallback to local
+                print(f"⚠️ Failed to create DistributedCacheActor: {e}. Falling back to local cache.")
+                return None
+
+    def get(self, prompt: str, model: str, **params) -> Optional[str]:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                return ray.get(actor.get.remote(prompt, model, **params))
+            except Exception as e:
+                print(f"⚠️ Ray cache actor get failed: {e}. Falling back to local cache.")
+                
+        return self._local_manager.get(prompt, model, **params)
+
+    def put(self, prompt: str, model: str, response: str, ttl: Optional[int] = None, **params) -> None:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                actor.put.remote(prompt, model, response, ttl, **params)
+                return
+            except Exception as e:
+                print(f"⚠️ Ray cache actor put failed: {e}. Falling back to local cache.")
+                
+        self._local_manager.put(prompt, model, response, ttl, **params)
+
+    def invalidate(self, prompt: str, model: str, **params) -> bool:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                return ray.get(actor.invalidate.remote(prompt, model, **params))
+            except Exception as e:
+                print(f"⚠️ Ray cache actor invalidate failed: {e}.")
+        return self._local_manager.invalidate(prompt, model, **params)
+
+    def clear(self) -> None:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                ray.get(actor.clear.remote())
+            except Exception as e:
+                print(f"⚠️ Ray cache actor clear failed: {e}.")
+        self._local_manager.clear()
+
+    def get_stats(self) -> Dict[str, Any]:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                return ray.get(actor.get_stats.remote())
+            except Exception as e:
+                print(f"⚠️ Ray cache actor get_stats failed: {e}.")
+        return self._local_manager.get_stats()
+
+    def cleanup_expired(self) -> int:
+        actor = self._get_actor()
+        if actor is not None:
+            try:
+                return ray.get(actor.cleanup_expired.remote())
+            except Exception as e:
+                print(f"⚠️ Ray cache actor cleanup_expired failed: {e}.")
+        return self._local_manager.cleanup_expired()
+
+
+# Global cache manager client instance
 _global_cache = None
 
-def get_cache_manager(default_ttl: int = 3600) -> CacheManager:
-    """Get the global cache manager instance (singleton)"""
+def get_cache_manager(default_ttl: int = 3600) -> DistributedCacheClient:
+    """Get the global cache manager client instance (singleton)"""
     global _global_cache
     if _global_cache is None:
-        _global_cache = CacheManager(default_ttl=default_ttl)
+        _global_cache = DistributedCacheClient(default_ttl=default_ttl)
     return _global_cache

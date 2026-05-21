@@ -11,16 +11,16 @@ import os
 @pytest.mark.asyncio
 async def test_task_history_persistence():
     """Test that task history is accessible via API"""
-    # Add a test task
+    from coordinator import db
     import time
     test_task = {
         "id": "persist-test-1",
         "prompt": "test persistence",
         "status": "Success",
         "timestamp": time.time(),
-        "worker": "test-worker"
+        "worker": "test-worker",
     }
-    task_history.insert(0, test_task)
+    await db.upsert_task(test_task)
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/tasks")

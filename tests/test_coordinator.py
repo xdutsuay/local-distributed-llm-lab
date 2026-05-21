@@ -46,19 +46,15 @@ def test_task_history_api(client: TestClient):
 
 
 def test_chat_endpoint_mock_graph(client: TestClient):
-    # This might fail if LLM is not reachable, so we should mock the WorkflowManager in a real unit test.
-    # For now, we expect it to try and return something or fail gracefully.
-    # If the server is running locally without Ollama, it falls back.
     payload = {"prompt": "Test prompt"}
     response = client.post("/chat", json=payload)
-    if response.status_code == 200:
-        data = response.json()
-        assert "response" in data
-        assert "plan" in data
-    else:
-        # It's acceptable if it fails due to worker issues in test env, 
-        # but 500 means unchecked crash.
-        assert response.status_code != 500
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "response" in data
+    assert "plan" in data
+    assert len(data["plan"]) >= 1
+    assert data["response"]
+
 
 
 def test_chat_endpoint_returns_browser_contributions(client: TestClient, monkeypatch):

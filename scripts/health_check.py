@@ -57,6 +57,54 @@ def check_coordinator_api():
     
     return all_ok
 
+def check_lmstudio():
+    """Check LM Studio OpenAI-compatible API when INFERENCE_BACKEND=lmstudio."""
+    import os
+    if os.getenv("INFERENCE_BACKEND", "ollama").lower() != "lmstudio":
+        print("\n🧠 LM Studio check skipped (INFERENCE_BACKEND != lmstudio)")
+        return True
+
+    print("\n🧠 Checking LM Studio API...")
+    api_base = os.getenv("LMSTUDIO_API_BASE", "http://127.0.0.1:1234/v1")
+    try:
+        response = requests.get(f"{api_base}/models", timeout=5)
+        if response.status_code == 200:
+            models = response.json().get("data", [])
+            print(f"✅ LM Studio reachable ({len(models)} model(s))")
+            return True
+        print(f"⚠️  LM Studio /models status: {response.status_code}")
+        return False
+    except requests.RequestException as e:
+        print(f"❌ LM Studio Error: {e}")
+        return False
+
+
+def check_android_nodes():
+    """Report mobile/android compute nodes registered via heartbeat."""
+    print("\n📱 Checking Android / mobile nodes...")
+    try:
+        response = requests.get("http://localhost:8000/api/nodes", timeout=5)
+        if response.status_code != 200:
+            print(f"❌ /api/nodes status: {response.status_code}")
+            return False
+        active = response.json().get("active_nodes", {})
+        mobile = [
+            nid
+            for nid, info in active.items()
+            if "mobile_compute" in info.get("capabilities", [])
+            or "Android" in nid
+            or info.get("metadata", {}).get("model") == "Mobile-Compute-Node"
+        ]
+        if mobile:
+            print(f"✅ {len(mobile)} mobile/android node(s): {', '.join(mobile[:3])}")
+            return True
+        print("⚠️  No Android/mobile nodes connected (optional for stable v1)")
+        return True
+    except Exception as e:
+        print(f"❌ Android node check error: {e}")
+        return False
+
+
 def check_workers():
     """Check registered workers"""
     print("\n👷 Checking Worker Registration...")
@@ -93,7 +141,9 @@ def main():
     checks = [
         check_ray_cluster(),
         check_coordinator_api(),
+        check_lmstudio(),
         check_workers(),
+        check_android_nodes(),
     ]
     
     print("\n" + "=" * 50)

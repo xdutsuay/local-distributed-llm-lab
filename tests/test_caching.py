@@ -148,3 +148,17 @@ def test_global_cache_singleton():
     cache2 = get_cache_manager()
     
     assert cache1 is cache2
+
+
+def test_distributed_client_local_fallback(monkeypatch):
+    """DistributedCacheClient uses in-process cache when Ray actor unavailable."""
+    import os
+    monkeypatch.setenv("RAY_MOCK_MODE", "1")
+    import coordinator.cache_manager as cm
+    cm._global_cache = None
+
+    client = get_cache_manager()
+    client.put("dist-key", "gemma", "cached-value")
+    assert client.get("dist-key", "gemma") == "cached-value"
+    stats = client.get_stats()
+    assert stats["hits"] >= 1

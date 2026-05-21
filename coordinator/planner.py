@@ -44,12 +44,29 @@ class Planner:
         """
         
         try:
-            response = ollama.chat(model=self.model_name, messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_query},
-            ], options={'temperature': 0.1}, keep_alive='60m')
-            
-            content = response['message']['content'].strip()
+            if os.getenv("INFERENCE_BACKEND", "").lower() == "lmstudio":
+                import requests
+                api_base = "http://127.0.0.1:1234/v1"
+                resp = requests.post(
+                    f"{api_base}/chat/completions",
+                    json={
+                        "model": self.model_name or "local-model",
+                        "messages": [
+                            {'role': 'system', 'content': system_prompt},
+                            {'role': 'user', 'content': user_query},
+                        ],
+                        "temperature": 0.1
+                    },
+                    timeout=60
+                )
+                resp.raise_for_status()
+                content = resp.json()['choices'][0]['message']['content'].strip()
+            else:
+                response = ollama.chat(model=self.model_name, messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_query},
+                ], options={'temperature': 0.1}, keep_alive='60m')
+                content = response['message']['content'].strip()
             print(f"🔍 Raw Planner Output: {content[:100]}...")
             
             # Robust cleanup

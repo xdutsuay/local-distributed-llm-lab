@@ -179,7 +179,10 @@
 </head>
 
 <body>
-    <h1>Cluster Dashboard</h1>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1>Cluster Dashboard</h1>
+        <button class="btn-secondary" onclick="openProviderModal()">⚙️ Change Provider</button>
+    </div>
 
     <div class="tabs">
         <button class="tab-btn active" onclick="showTab('nodes')">Nodes</button>
@@ -297,6 +300,20 @@
             </div>
 
             <div id="swapLog" class="verification-log"></div>
+        </div>
+    </div>
+
+    <!-- Provider Selection Modal -->
+    <div id="providerModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Select Local LLM Provider</h2>
+            <p style="color:#666; margin-bottom: 20px;">Choose the provider you want to use. We will attempt to start it in the background if it's not already running.</p>
+            
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn-primary" onclick="selectProvider('ollama')" style="padding:15px; font-size:1.1em; background:#007bff;">Ollama</button>
+                <button class="btn-primary" onclick="selectProvider('lmstudio')" style="padding:15px; font-size:1.1em; background:#6f42c1;">LM Studio</button>
+            </div>
+            <div id="providerLog" class="verification-log" style="margin-top:15px;"></div>
         </div>
     </div>
 
@@ -564,6 +581,56 @@
                 btn.disabled = false;
             }
         }
+
+        // Provider Selection Logic
+        function openProviderModal() {
+            const logDiv = document.getElementById('providerLog');
+            logDiv.style.display = 'none';
+            logDiv.textContent = '';
+            document.getElementById('providerModal').style.display = 'flex';
+        }
+
+        async function selectProvider(provider) {
+            const logDiv = document.getElementById('providerLog');
+            logDiv.style.display = 'block';
+            logDiv.textContent = `> Configuring and starting ${provider}...\n`;
+            
+            try {
+                const res = await fetch('/api/provider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: provider })
+                });
+                const data = await res.json();
+                logDiv.textContent += `> ${data.message}\n`;
+                
+                if (data.status === 'ok') {
+                    localStorage.setItem('llm_provider', provider);
+                    setTimeout(() => {
+                        document.getElementById('providerModal').style.display = 'none';
+                        fetchNodes();
+                    }, 1500);
+                } else {
+                    logDiv.textContent += `> Error: ${data.message}\n`;
+                }
+            } catch (e) {
+                logDiv.textContent += `> Network Error: ${e}\n`;
+            }
+        }
+
+        // Show provider modal on first load if not set
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!localStorage.getItem('llm_provider')) {
+                openProviderModal();
+            } else {
+                // optionally notify backend of our choice on load
+                fetch('/api/provider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: localStorage.getItem('llm_provider') })
+                }).catch(e => console.error(e));
+            }
+        });
 
         // Initial load
         fetchNodes();

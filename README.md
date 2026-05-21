@@ -25,8 +25,24 @@ If your local LLMs are running slow or you want to combine the compute of multip
 
 ### Prerequisites
 - Python 3.12+
-- [Ollama](https://ollama.com/) running locally
+- [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) running locally
 - Ray (2.53.0+)
+
+### LM Studio + Gemma (local speed testing)
+```bash
+# In LM Studio: load Gemma, start local server (default http://127.0.0.1:1234)
+export INFERENCE_BACKEND=lmstudio
+export LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1
+./scripts/start_coordinator.sh
+# Dashboard: http://localhost:8000/llmlab — select LM Studio provider
+```
+
+### Android compute node
+```bash
+cd android-compute-node && ./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+# Point app Settings to coordinator IP; WebSocket: ws://<ip>:8000/ws/join
+```
 
 ### Installation
 ```bash

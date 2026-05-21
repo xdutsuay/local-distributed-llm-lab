@@ -270,6 +270,34 @@ class LLMWorker:
                         "cached": False,
                     }
 
+            # --- LM Studio backend path ---
+            if self.backend == "lmstudio":
+                import requests
+                base = self.api_base or "http://127.0.0.1:1234/v1"
+                response = requests.post(
+                    f"{base}/chat/completions", 
+                    json={
+                        "model": self.model_name or "local-model",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.7
+                    },
+                    timeout=60
+                )
+                if response.status_code == 200:
+                    resp = response.json()['choices'][0]['message']['content']
+                    self.generated_bytes += len(resp.encode('utf-8'))
+                    self.last_task = "Idle"
+                    cache.put(prompt, self.model_name, resp)
+                    return {
+                        "content": resp,
+                        "node_id": self.node_id,
+                        "model": f"lmstudio:{self.model_name}",
+                        "timestamp": time.time(),
+                        "cached": False
+                    }
+                else:
+                    raise Exception(f"LM Studio API Error: {response.text}")
+
             # --- Ollama backend path (default) ---
             response = ollama.chat(model=self.model_name, messages=[
                 {'role': 'user', 'content': prompt},

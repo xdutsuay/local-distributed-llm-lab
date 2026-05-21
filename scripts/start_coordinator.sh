@@ -24,8 +24,44 @@ fi
 
 # Set environment variables
 export OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+export INFERENCE_BACKEND=${INFERENCE_BACKEND:-ollama}
+export LMSTUDIO_API_BASE=${LMSTUDIO_API_BASE:-http://127.0.0.1:1234/v1}
 LLMLAB_HOST=${LLMLAB_HOST:-0.0.0.0}
 LLMLAB_PORT=${LLMLAB_PORT:-8000}
+
+# If default port is busy, pick the next free port (8000–8010)
+if python - <<'PY' 2>/dev/null
+import os, socket
+port = int(os.environ.get("LLMLAB_PORT", "8000"))
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("127.0.0.1", port))
+    s.close()
+    raise SystemExit(0)
+except OSError:
+    raise SystemExit(1)
+PY
+then
+  :
+else
+  for p in $(seq 8000 8010); do
+    if python - <<PY 2>/dev/null
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("127.0.0.1", $p))
+    s.close()
+    raise SystemExit(0)
+except OSError:
+    raise SystemExit(1)
+PY
+    then
+      echo "⚠️  Port ${LLMLAB_PORT} busy — using $p"
+      LLMLAB_PORT=$p
+      break
+    fi
+  done
+fi
 LAN_IP=$(python - <<'PY'
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

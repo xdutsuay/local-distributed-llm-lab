@@ -151,17 +151,64 @@ class LocalLLMWorker:
             except Exception as e:
                 print(f"⚠️ AirLLM generate error ({e}) — falling back to Ollama.")
 
+        # --- LM Studio path ---
+        if self.backend == "lmstudio":
+            try:
+                import requests
+                api_base = "http://127.0.0.1:1234/v1"
+                response = requests.post(
+                    f"{api_base}/chat/completions",
+                    json={
+                        "model": self.model_name or "local-model",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.7
+                    },
+                    timeout=60
+                )
+                if response.status_code == 200:
+                    resp = response.json()['choices'][0]['message']['content']
+                    self.generated_bytes += len(resp.encode())
+                    return {"content": resp, "node_id": self.node_id,
+                            "model": f"lmstudio:{self.model_name}",
+                            "timestamp": time.time(), "cached": False}
+                else:
+                    print(f"⚠️ LM Studio API Error: {response.text}")
+            except Exception as e:
+                print(f"⚠️ LM Studio generate error ({e}) — falling back to Ollama.")
+
         # --- Ollama path (default / fallback) ---
         import ollama
-        response = ollama.chat(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            keep_alive="60m",
-        )
-        resp = response["message"]["content"]
-        self.generated_bytes += len(resp.encode())
-        return {"content": resp, "node_id": self.node_id,
-                "model": self.model_name, "timestamp": time.time(), "cached": False}
+        try:
+            response = ollama.chat(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                keep_alive="60m",
+            )
+            resp = response["message"]["content"]
+            self.generated_bytes += len(resp.encode())
+            return {"content": resp, "node_id": self.node_id,
+                    "model": self.model_name, "timestamp": time.time(), "cached": False}
+        except Exception as e:
+            error_str = str(e)
+            if "not found" in error_str or "pull" in error_str:
+                try:
+                    ollama.pull(self.model_name)
+                    response = ollama.chat(
+                        model=self.model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    resp = response["message"]["content"]
+                    self.generated_bytes += len(resp.encode())
+                    return {"content": resp, "node_id": self.node_id,
+                            "model": self.model_name, "timestamp": time.time(), "cached": False}
+                except Exception as pull_error:
+                    print(f"Local Pull failed: {pull_error}")
+            
+            print(f"Local Ollama inference failed: {e}. Falling back to mock.")
+            resp = f"[Mock] Response from {self.model_name} (Node: {self.node_id}) to prompt: '{prompt}'"
+            self.generated_bytes += len(resp.encode())
+            return {"content": resp, "node_id": self.node_id,
+                    "model": self.model_name, "timestamp": time.time(), "cached": False}
 
 
 # ---------------------------------------------------------------------------
