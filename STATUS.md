@@ -39,7 +39,8 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 - `POST /chat` — OK (~65s cold; multi-step LangGraph)
 - Chat UI — OK; answer appears when **`fetch('/chat')` completes** (~23s observed). UI has no streaming; timer shows elapsed seconds while waiting.
 
-**Docs:** Plans in `docs/plans/`; contributor guide in `CONTRIBUTING.md`
+**Docs:** Plans in `docs/plans/`; contributor guide in `CONTRIBUTING.md`  
+**Pushed:** `f862bc1` on `main`
 
 ## Remaining (post–stable v1)
 
