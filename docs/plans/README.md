@@ -6,6 +6,7 @@ Canonical plans for LLMLAB milestones. Use these when picking up work in Cursor,
 |------|--------|---------|
 | [Stable v1 overhaul](STABLE_V1_OVERHAUL.md) | **Shipped** (2026-05-21) | Regression gate R1–R10, LM Studio/Gemma path, Android compute node, coordinator hardening |
 | [Extend MCP server](EXTEND_MCP_SERVER.md) | **Shipped** (2026-05-21) | Cursor MCP tools + resources over coordinator HTTP APIs |
+| [Autoresearch integration](AUTORESEARCH_INTEGRATION.md) | **Shipped** (2026-05-22) | Optional autoresearch-macos sidecar, runner, MCP + coordinator tool |
 
 ## Related docs
 

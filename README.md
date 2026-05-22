@@ -139,7 +139,9 @@ We welcome PRs for tests, inference paths, Android protocol alignment, and MCP t
 2. Pick a plan in [docs/plans/](docs/plans/)  
 3. Run `pytest tests/test_regression_gate.py -m "not live" -q` before opening a PR  
 
-**Help wanted:** MCP cluster tools · streaming chat UI · Phase 13 RAG · vLLM backend · docs and reproduction scripts.
+**Help wanted:** streaming chat UI · Phase 13 RAG · vLLM backend · autoresearch experiment results · docs and reproduction scripts.
+
+**Optional research (Mac):** [autoresearch-macos](https://github.com/miolini/autoresearch-macos) sidecar — see [experiments/autoresearch/README.md](experiments/autoresearch/README.md) and `./scripts/run_autoresearch.sh`.
 
 ---
 
@@ -155,6 +157,7 @@ We welcome PRs for tests, inference paths, Android protocol alignment, and MCP t
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and commands |
 | [docs/INFERENCE_PATH.md](docs/INFERENCE_PATH.md) | Ray vs local worker, backends, benchmarks |
 | [docs/MCP.md](docs/MCP.md) | Cursor MCP cluster tools |
+| [experiments/autoresearch/README.md](experiments/autoresearch/README.md) | Optional autoresearch-macos training sidecar |
 
 ---
 

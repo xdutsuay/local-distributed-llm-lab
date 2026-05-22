@@ -59,6 +59,9 @@ EXPECTED_TOOL_NAMES = (
     "clear_cache",
     "run_regression_gate",
     "coordinator_docs",
+    "autoresearch_run_once",
+    "autoresearch_status",
+    "autoresearch_docs",
 )
 
 RESOURCE_URIS = (
@@ -332,6 +335,62 @@ def fetch_coordinator_docs() -> str:
     )
 
 
+def fetch_autoresearch_docs() -> str:
+    return (
+        "autoresearch-macos sidecar (optional single-GPU training):\n"
+        f"- experiments/autoresearch/README.md — {REPO_ROOT / 'experiments' / 'autoresearch' / 'README.md'}\n"
+        f"- docs/plans/AUTORESEARCH_INTEGRATION.md\n"
+        "- Upstream: https://github.com/miolini/autoresearch-macos (edit train.py via program.md)\n"
+        "GPU: do not run training while coordinator chat uses the same GPU.\n"
+        "Flow: autoresearch_status → autoresearch_run_once → list_events(event_type=autoresearch)"
+    )
+
+
+async def fetch_autoresearch_status(limit: int = 5) -> str:
+    from coordinator.autoresearch_runner import RUN_LOG_PATH, read_recent_runs
+
+    rows = read_recent_runs(limit)
+    if not rows:
+        return (
+            f"No autoresearch runs logged yet ({RUN_LOG_PATH}).\n"
+            "Set up submodule per experiments/autoresearch/README.md"
+        )
+    lines = [f"Last {len(rows)} run(s) from {RUN_LOG_PATH}:"]
+    for r in rows:
+        v = r.get("val_bpb")
+        v_s = f"{v:.4f}" if isinstance(v, (int, float)) else "—"
+        lines.append(
+            f"- {r.get('timestamp', '?')} | val_bpb={v_s} | "
+            f"{r.get('duration_sec', '?')}s | ok={r.get('success')}"
+        )
+    return "\n".join(lines)
+
+
+async def fetch_autoresearch_run_once(dry_run: bool = False) -> str:
+    from coordinator.autoresearch_runner import run_training
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: run_training(dry_run=dry_run)
+    )
+    if result.get("dry_run"):
+        return (
+            f"Dry run OK\n"
+            f"dir={result.get('experiment_dir')}\n"
+            f"cmd={result.get('command')}\n"
+            f"log={result.get('log_path')}"
+        )
+    if not result.get("success"):
+        return f"Training failed: {result.get('error', result)}"
+    v = result.get("val_bpb")
+    v_s = f"{v:.4f}" if isinstance(v, (int, float)) else "not parsed"
+    return (
+        f"Training finished in {result.get('duration_sec')}s\n"
+        f"val_bpb={v_s}\n"
+        f"log={result.get('log_path')}"
+    )
+
+
 # --- MCP tools ---
 
 
@@ -424,6 +483,28 @@ async def run_regression_gate() -> str:
 async def coordinator_docs() -> str:
     """Read-only: static pointers to NEXT_STEPS.md and docs/COMPONENTS.md."""
     return fetch_coordinator_docs()
+
+
+@mcp.tool()
+async def autoresearch_status(limit: int = 5) -> str:
+    """Read-only: recent autoresearch training runs from data/autoresearch_runs.jsonl."""
+    return await fetch_autoresearch_status(limit=limit)
+
+
+@mcp.tool()
+async def autoresearch_run_once(dry_run: bool = False) -> str:
+    """
+    Mutating: run one autoresearch-macos train.py experiment (~5 min, single GPU).
+    Requires experiments/autoresearch submodule. Honors LLMLAB_BLOCK_TRAIN.
+    Set dry_run=true to validate paths only.
+    """
+    return await fetch_autoresearch_run_once(dry_run=dry_run)
+
+
+@mcp.tool()
+def autoresearch_docs() -> str:
+    """Read-only: autoresearch sidecar setup, GPU mutex, and upstream program.md workflow."""
+    return fetch_autoresearch_docs()
 
 
 # --- MCP resources ---

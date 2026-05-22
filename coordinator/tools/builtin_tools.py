@@ -10,6 +10,7 @@ import math
 import re
 from typing import Dict, Any
 from coordinator.tools.base import Tool, ToolOutput
+from coordinator.tools.autoresearch_tool import AutoresearchTrainTool
 
 
 class CalculatorTool(Tool):
@@ -152,5 +153,6 @@ class TextProcessorTool(Tool):
 BUILTIN_TOOLS = [
     CalculatorTool(),
     WebSearchTool(),
-    TextProcessorTool()
+    TextProcessorTool(),
+    AutoresearchTrainTool(),
 ]

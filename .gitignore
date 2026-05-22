@@ -16,6 +16,9 @@ dist/
 graphify-out/
 data/llmlab.db
 data/chroma_db/
+data/autoresearch_runs.jsonl
+experiments/autoresearch/*
+!experiments/autoresearch/README.md
 *.spec
 picoclawexperiment/
 

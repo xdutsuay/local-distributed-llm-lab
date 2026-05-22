@@ -42,7 +42,7 @@ Start the coordinator before using cluster tools:
 ./scripts/start_coordinator.sh
 ```
 
-## Tools (12)
+## Tools (15)
 
 | Tool | Type | Coordinator API |
 |------|------|-----------------|
@@ -58,6 +58,19 @@ Start the coordinator before using cluster tools:
 | `clear_cache` | **mutate** | `POST /api/cache/clear` |
 | `run_regression_gate` | dev | local `pytest` subprocess |
 | `coordinator_docs` | read | static doc pointers |
+| `autoresearch_status` | read | `data/autoresearch_runs.jsonl` |
+| `autoresearch_run_once` | **mutate** | `uv run train.py` in sidecar (~5 min) |
+| `autoresearch_docs` | read | sidecar setup pointers |
+
+### Autoresearch (optional, single GPU)
+
+Requires [experiments/autoresearch](../experiments/autoresearch/README.md) submodule. **Do not** run while coordinator chat is using the same GPU.
+
+1. `autoresearch_docs` — setup and GPU mutex
+2. `cluster_health` — coordinator up (optional)
+3. `autoresearch_run_once` with `dry_run=true` — validate paths
+4. `autoresearch_run_once` — one training run (~5 min)
+5. `list_events` with `event_type=autoresearch` or `autoresearch_status`
 
 ## Resources (3)
 

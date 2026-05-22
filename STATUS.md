@@ -56,6 +56,12 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 - Chat UI polls `/api/events` during inference; 503 shows `error` field
 - **Pushed:** `6156732` on `main`
 
+## Autoresearch sidecar (2026-05-22)
+
+- Optional [autoresearch-macos](https://github.com/miolini/autoresearch-macos) via `experiments/autoresearch/`
+- `./scripts/run_autoresearch.sh` · tool `autoresearch_train` · MCP `autoresearch_*`
+- Plan: [docs/plans/AUTORESEARCH_INTEGRATION.md](docs/plans/AUTORESEARCH_INTEGRATION.md)
+
 ## Remaining (post–stable v1)
 
 - Live regression R7–R10 (LM Studio + Android E2E when services up)

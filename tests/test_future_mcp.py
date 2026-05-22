@@ -20,7 +20,7 @@ def test_mcp_server_initialization():
 
 
 def test_expected_tool_names_contract():
-    assert len(EXPECTED_TOOL_NAMES) == 12
+    assert len(EXPECTED_TOOL_NAMES) == 15
     assert set(EXPECTED_TOOL_NAMES) == {
         "cluster_health",
         "list_nodes",
@@ -34,6 +34,9 @@ def test_expected_tool_names_contract():
         "clear_cache",
         "run_regression_gate",
         "coordinator_docs",
+        "autoresearch_run_once",
+        "autoresearch_status",
+        "autoresearch_docs",
     }
     assert "submit_task" not in EXPECTED_TOOL_NAMES
 
@@ -64,8 +67,10 @@ async def test_mcp_list_tools_contract():
 
 
 def test_fetch_helpers_exist_for_http_tools():
+    sync_helpers = {"coordinator_docs", "autoresearch_docs"}
+    skip = {"run_regression_gate"} | sync_helpers
     for name in EXPECTED_TOOL_NAMES:
-        if name in ("run_regression_gate", "coordinator_docs"):
+        if name in skip:
             continue
         helper = f"fetch_{name}"
         assert hasattr(mcp_server, helper), f"missing {helper}"
