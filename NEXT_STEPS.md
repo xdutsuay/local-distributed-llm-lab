@@ -100,15 +100,17 @@ git restore data/chroma_db/chroma.sqlite3
 
 **Why:** Graph centers on `AdaptiveWorkerPool` + `LLMWorker`. Recent commits noted Ollama slowness and swap/restart failures. Stabilize before ROADMAP Phase 13 (RAG).
 
-### Phase A — Hygiene (½ day)
+### Phase A — Hygiene (½ day) ✅
 
 | Step | Action | Done when |
 |------|--------|-----------|
-| A1 | Apply Plan 1 commits 1–3; update `.gitignore` per above | No `build/`, `dist/`, DB binaries staged |
-| A2 | `pytest -q` | Core tests pass |
-| A3 | `./scripts/start_coordinator.sh` (or your usual start) | Dashboard at `http://localhost:8000/llmlab` |
+| A1 | Apply Plan 1 commits 1–3; update `.gitignore` per above | ✅ No `build/`, `dist/`, DB binaries staged |
+| A2 | `pytest -q` | ✅ Core tests pass |
+| A3 | `./scripts/start_coordinator.sh` (or your usual start) | ✅ Dashboard at `http://localhost:8000/llmlab` |
 
 ### Phase B — Diagnose inference path (1–2 days)
+
+**Guide:** [docs/INFERENCE_PATH.md](docs/INFERENCE_PATH.md) — Ray vs local decision, `FORCE_LOCAL_WORKER`, `scripts/benchmark_chat.py`, event log playbook.
 
 | Step | Investigation | Record |
 |------|---------------|--------|

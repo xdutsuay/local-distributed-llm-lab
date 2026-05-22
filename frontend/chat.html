@@ -181,15 +181,58 @@
 
             const typingDiv = document.createElement('div');
             typingDiv.className = 'typing';
-            typingDiv.textContent = 'Thinking & Planning... (0s)';
+            typingDiv.textContent = 'Planning... (0s)';
             chat.appendChild(typingDiv);
 
-            // Show elapsed time so user knows it's processing
-            const startTime = Date.now();
-            const timer = setInterval(() => {
+            const EVENT_LABELS = {
+                plan_start: 'Planning',
+                plan_done: 'Executing',
+                prewarm: 'Prewarming model',
+                error: 'Error',
+            };
+            const FALLBACK_STAGES = ['Planning', 'Executing', 'Waiting for model'];
+            const RELEVANT_EVENTS = new Set(['plan_start', 'plan_done', 'prewarm', 'error']);
+            let lastEventType = null;
+            let seenEvents = false;
+            let fallbackStageIndex = 0;
+
+            function updateTypingStatus() {
                 const elapsed = Math.round((Date.now() - startTime) / 1000);
-                typingDiv.textContent = `Thinking & Planning... (${elapsed}s)`;
-            }, 1000);
+                let label;
+                if (lastEventType && EVENT_LABELS[lastEventType]) {
+                    label = EVENT_LABELS[lastEventType];
+                } else {
+                    label = FALLBACK_STAGES[Math.min(fallbackStageIndex, FALLBACK_STAGES.length - 1)];
+                }
+                typingDiv.textContent = `${label}... (${elapsed}s)`;
+            }
+
+            const startTime = Date.now();
+            const timer = setInterval(updateTypingStatus, 1000);
+
+            const eventPoll = setInterval(async () => {
+                try {
+                    const evRes = await fetch('/api/events?limit=8');
+                    if (!evRes.ok) return;
+                    const { events } = await evRes.json();
+                    if (!Array.isArray(events) || events.length === 0) return;
+                    for (const ev of events) {
+                        if (RELEVANT_EVENTS.has(ev.event_type)) {
+                            lastEventType = ev.event_type;
+                            seenEvents = true;
+                            updateTypingStatus();
+                            return;
+                        }
+                    }
+                } catch (_) { /* ignore poll errors while chat is in flight */ }
+            }, 2000);
+
+            const fallbackTimer = setInterval(() => {
+                if (!seenEvents && fallbackStageIndex < FALLBACK_STAGES.length - 1) {
+                    fallbackStageIndex += 1;
+                    updateTypingStatus();
+                }
+            }, 10000);
 
             // 5-minute timeout — LLM models can be slow on first query
             const controller = new AbortController();
@@ -215,11 +258,13 @@
 
                 clearTimeout(timeoutId);
                 clearInterval(timer);
+                clearInterval(eventPoll);
+                clearInterval(fallbackTimer);
                 chat.removeChild(typingDiv);
 
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({ detail: res.statusText }));
-                    throw new Error(errData.detail || `Server error ${res.status}`);
+                    throw new Error(errData.error || errData.detail || `Server error ${res.status}`);
                 }
 
                 const data = await res.json();
@@ -242,6 +287,8 @@
             } catch (e) {
                 clearTimeout(timeoutId);
                 clearInterval(timer);
+                clearInterval(eventPoll);
+                clearInterval(fallbackTimer);
                 if (chat.contains(typingDiv)) chat.removeChild(typingDiv);
                 if (e.name === 'AbortError') {
                     appendMessage('⏱️ Request timed out after 5 minutes. The model may be overloaded — please try again.', 'assistant');

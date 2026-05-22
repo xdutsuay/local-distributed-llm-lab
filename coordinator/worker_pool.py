@@ -13,6 +13,7 @@ The switch is controlled by active LLM-capable node count, not every
 connected browser/mobile node.
 """
 import asyncio
+import os
 import threading
 import uuid
 from typing import Any, Dict, Optional
@@ -230,6 +231,8 @@ def ray_required(method):
 
 
 def _registry_llm_count(pool: Any) -> int:
+    if os.getenv("FORCE_LOCAL_WORKER") == "1":
+        return 1
     if hasattr(pool, "_active_llm_node_count"):
         return pool._active_llm_node_count()
     registry = getattr(pool, "_registry", None)
@@ -365,6 +368,8 @@ class AdaptiveWorkerPool:
         return self._active_llm_node_count() <= 1
 
     def _active_llm_node_count(self) -> int:
+        if os.getenv("FORCE_LOCAL_WORKER") == "1":
+            return 1
         if not self._registry:
             return 1
         if hasattr(self._registry, "active_llm_node_count"):

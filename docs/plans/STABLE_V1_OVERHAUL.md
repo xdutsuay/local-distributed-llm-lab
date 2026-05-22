@@ -58,6 +58,8 @@ PYTHONPATH=. pytest tests/test_regression_gate.py -m live -q
 
 ## Part B — 48-step day plan (summary)
 
+**Inference path (Ray vs local, benchmarks):** [INFERENCE_PATH.md](../INFERENCE_PATH.md)
+
 | Phase | IDs | Focus |
 |-------|-----|--------|
 | 0 | T01–T08 | Baseline pytest, `.gitignore`, commit slices, graphify |
