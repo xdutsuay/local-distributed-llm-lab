@@ -31,3 +31,14 @@ PYTHONPATH=. pytest tests/ --ignore=tests/e2e/ -q
 ```
 
 **Result:** 92 passed, 17 skipped (2026-05-21).
+
+## Live gate (2026-05-22)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| R7 `/health` | **PASS** | `pytest tests/test_regression_gate.py::TestRegressionGateLive::test_r07_live_coordinator_health -m live` |
+| R8 `/chat` | Manual | Full LangGraph run often **60s+**; use `scripts/benchmark_chat.py --timeout 120` |
+| R9 cache repeat | Manual | Second identical prompt should be faster if cache hits |
+| R10 Android | Manual | `ANDROID_E2E_OK=1` after APK connect |
+
+Phase B–C docs: [docs/INFERENCE_PATH.md](docs/INFERENCE_PATH.md) (`6156732`).

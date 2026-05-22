@@ -24,6 +24,12 @@ def main() -> int:
     parser.add_argument("--prompt", default="2+2", help="Chat prompt to send")
     parser.add_argument("--repeat", type=int, default=1, help="Number of timed requests")
     parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Per-request timeout in seconds (default: 300)",
+    )
+    parser.add_argument(
         "--force-local",
         action="store_true",
         help="Print note: coordinator must be started with FORCE_LOCAL_WORKER=1",
@@ -49,7 +55,7 @@ def main() -> int:
             response = requests.post(
                 url,
                 json={"prompt": args.prompt},
-                timeout=300,
+                timeout=args.timeout,
             )
         except requests.RequestException as exc:
             print(f"run {i + 1}/{args.repeat}: request failed: {exc}", file=sys.stderr)

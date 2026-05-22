@@ -190,3 +190,13 @@ async def test_active_llm_node_count_ignores_browser_only_nodes():
 
     assert reg.active_node_count() == 2
     assert reg.active_llm_node_count() == 1
+
+
+def test_force_local_worker_env(monkeypatch):
+    """FORCE_LOCAL_WORKER=1 forces single-node local path for benchmarks."""
+    monkeypatch.setenv("FORCE_LOCAL_WORKER", "1")
+    from coordinator.worker_pool import AdaptiveWorkerPool, _registry_llm_count
+
+    pool = AdaptiveWorkerPool()
+    assert _registry_llm_count(pool) == 1
+    assert pool._active_llm_node_count() == 1

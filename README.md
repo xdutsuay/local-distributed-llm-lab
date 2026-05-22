@@ -153,6 +153,8 @@ We welcome PRs for tests, inference paths, Android protocol alignment, and MCP t
 | [docs/plans/](docs/plans/) | Stable v1 + MCP extension plans |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases 12–16+ |
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and commands |
+| [docs/INFERENCE_PATH.md](docs/INFERENCE_PATH.md) | Ray vs local worker, backends, benchmarks |
+| [docs/MCP.md](docs/MCP.md) | Cursor MCP cluster tools |
 
 ---
 

@@ -49,8 +49,16 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 - Tests: `pytest tests/test_mcp.py tests/test_future_mcp.py -q`  
 - **Pushed:** `c60a510` on `main`
 
+## Phase B–C (2026-05-21)
+
+- [docs/INFERENCE_PATH.md](docs/INFERENCE_PATH.md) — Ray vs local, `FORCE_LOCAL_WORKER`, backends
+- `scripts/benchmark_chat.py` — `/chat` latency benchmark
+- Chat UI polls `/api/events` during inference; 503 shows `error` field
+- **Pushed:** `6156732` on `main`
+
 ## Remaining (post–stable v1)
 
+- Live regression R7–R10 (LM Studio + Android E2E when services up)
 - Phase 13 RAG (ChromaDB planner integration) — deferred
 - LangGraph lifespan migration (FastAPI `@app.on_event` deprecation)
 - Full Ray multi-node perf tuning with Gemma on remote workers
