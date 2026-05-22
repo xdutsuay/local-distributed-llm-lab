@@ -46,7 +46,8 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 
 - [`mcp_server.py`](mcp_server.py): 12 tools + 3 resources (`llmlab://nodes/active`, etc.)
 - Setup: [docs/MCP.md](docs/MCP.md)
-- Tests: `pytest tests/test_mcp.py tests/test_future_mcp.py -q`
+- Tests: `pytest tests/test_mcp.py tests/test_future_mcp.py -q`  
+- **Pushed:** `c60a510` on `main`
 
 ## Remaining (post–stable v1)
 
