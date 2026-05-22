@@ -1,6 +1,6 @@
 # Extend LLMLAB MCP server (dev + cluster operations)
 
-**Status:** Planned (not yet implemented).  
+**Status:** Shipped (2026-05-21).  
 **Entry point:** [`mcp_server.py`](../../mcp_server.py) (FastMCP).  
 **Coordinator:** [`coordinator/main.py`](../../coordinator/main.py) @ `http://localhost:8000` (`LLM_LAB_API_URL`).
 

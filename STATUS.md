@@ -42,6 +42,12 @@ INFERENCE_BACKEND=lmstudio LMSTUDIO_API_BASE=http://127.0.0.1:1234/v1 ./scripts/
 **Docs:** Plans in `docs/plans/`; contributor guide in `CONTRIBUTING.md`  
 **Pushed:** `f862bc1` on `main`
 
+## MCP server (2026-05-21)
+
+- [`mcp_server.py`](mcp_server.py): 12 tools + 3 resources (`llmlab://nodes/active`, etc.)
+- Setup: [docs/MCP.md](docs/MCP.md)
+- Tests: `pytest tests/test_mcp.py tests/test_future_mcp.py -q`
+
 ## Remaining (post–stable v1)
 
 - Phase 13 RAG (ChromaDB planner integration) — deferred

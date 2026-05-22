@@ -6,6 +6,7 @@
                 "/Users/nehatiwari/localcode/LLMLAB/mcp_server.py"
             ],
             "env": {
+                "LLM_LAB_API_URL": "http://localhost:8000",
                 "PYTHONUNBUFFERED": "1"
             }
         }
