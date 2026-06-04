@@ -96,8 +96,12 @@ def format_nodes(data: dict[str, Any]) -> str:
         model = meta.get("model", "Unknown")
         ip = meta.get("client_ip", "Unknown")
         caps = ", ".join(info.get("capabilities", []))
+        task = meta.get("current_task", "")
         short_id = nid[:8] + "..." if len(nid) > 8 else nid
-        lines.append(f"- {short_id} ({model}) @ {ip} | [{caps}]")
+        line = f"- {short_id} ({model}) @ {ip} | [{caps}]"
+        if task:
+            line += f" | task={task}"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -107,10 +111,16 @@ def format_tasks(tasks: list[dict[str, Any]], limit: int = 20) -> str:
     lines = [f"Recent tasks (showing up to {limit}):"]
     for task in tasks[:limit]:
         status = task.get("status", "unknown")
-        prompt = task.get("prompt", "")[:60]
+        prompt = task.get("prompt", "")[:40]
         tid = str(task.get("id", ""))[:8]
-        worker = task.get("worker", task.get("final_node", ""))
-        lines.append(f"- [{status}] {tid}... | {prompt!r} | worker={worker}")
+        worker = task.get("worker", task.get("final_node", "—"))
+        dur = task.get("duration")
+        dur_s = f"{dur:.1f}s" if isinstance(dur, (int, float)) else "—"
+        err = task.get("error")
+        line = f"- {tid}… | {status} | {dur_s} | worker={worker} | {prompt!r}"
+        if err:
+            line += f" | error={str(err)[:80]}"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -191,12 +201,16 @@ async def fetch_list_tasks(
 
 async def fetch_list_events(
     limit: int = 50,
+    event_type: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> str:
+    params: dict[str, Any] = {"limit": limit}
+    if event_type:
+        params["event_type"] = event_type
     resp = await coordinator_request(
         "GET",
         "/api/events",
-        params={"limit": limit},
+        params=params,
         client=client,
     )
     if resp.is_error:
@@ -317,13 +331,18 @@ async def fetch_run_regression_gate() -> str:
         cwd=REPO_ROOT,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        env={
+            **os.environ,
+            "PYTHONPATH": str(REPO_ROOT),
+            "RAY_MOCK_MODE": "1",
+        },
     )
     stdout, stderr = await proc.communicate()
     out = stdout.decode() + stderr.decode()
+    tail = "\n".join(out.strip().splitlines()[-30:])
     if proc.returncode == 0:
-        return f"Regression gate passed.\n{out}".strip()
-    return f"Regression gate failed (exit {proc.returncode}).\n{out}".strip()
+        return f"Regression gate passed (exit 0).\n\n{tail}"
+    return f"Regression gate failed (exit {proc.returncode}).\n\n{tail}"
 
 
 def fetch_coordinator_docs() -> str:
@@ -331,6 +350,7 @@ def fetch_coordinator_docs() -> str:
         "LLMLAB coordinator documentation pointers:\n"
         f"- NEXT_STEPS.md — {REPO_ROOT / 'NEXT_STEPS.md'}\n"
         f"- docs/COMPONENTS.md — {REPO_ROOT / 'docs' / 'COMPONENTS.md'}\n"
+        "Graph hubs: AdaptiveWorkerPool, NodeRegistry (see docs/COMPONENTS.md).\n"
         "Use cluster_health → list_events → submit_chat for cold-start debugging."
     )
 
@@ -413,9 +433,10 @@ async def list_tasks(limit: int = 20) -> str:
 
 
 @mcp.tool()
-async def list_events(limit: int = 50) -> str:
-    """Read-only: operational event log for debugging stuck requests."""
-    return await fetch_list_events(limit=limit)
+async def list_events(event_type: str = "", limit: int = 50) -> str:
+    """Read-only: operational event log; optional event_type filter (e.g. prewarm, error)."""
+    et = event_type.strip() or None
+    return await fetch_list_events(limit=limit, event_type=et)
 
 
 @mcp.tool()
@@ -510,19 +531,40 @@ def autoresearch_docs() -> str:
 # --- MCP resources ---
 
 
+async def _resource_json(
+    method: str,
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    slice_tasks: int | None = None,
+) -> str:
+    resp = await coordinator_request(method, path, params=params)
+    if resp.is_error:
+        return json.dumps({"error": format_api_error(resp)}, indent=2)
+    data = resp.json()
+    if slice_tasks is not None and isinstance(data, dict) and "tasks" in data:
+        tasks = data.get("tasks", [])
+        if isinstance(tasks, list):
+            data = {**data, "tasks": tasks[:slice_tasks]}
+    return json.dumps(data, indent=2, default=str)
+
+
 @mcp.resource("llmlab://nodes/active")
 async def resource_nodes_active() -> str:
-    return await fetch_list_nodes()
+    """JSON snapshot of GET /api/nodes."""
+    return await _resource_json("GET", "/api/nodes")
 
 
 @mcp.resource("llmlab://tasks/recent")
 async def resource_tasks_recent() -> str:
-    return await fetch_list_tasks(limit=20)
+    """JSON snapshot of recent tasks (last 20)."""
+    return await _resource_json("GET", "/api/tasks", slice_tasks=20)
 
 
 @mcp.resource("llmlab://events/recent")
 async def resource_events_recent() -> str:
-    return await fetch_list_events(limit=50)
+    """JSON snapshot of recent events (limit 50)."""
+    return await _resource_json("GET", "/api/events", params={"limit": 50})
 
 
 if __name__ == "__main__":

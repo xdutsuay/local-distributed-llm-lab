@@ -9,6 +9,7 @@ import pytest
 
 from mcp_server import (
     API_URL,
+    EXPECTED_TOOL_NAMES,
     fetch_cache_stats,
     fetch_clear_cache,
     fetch_cluster_health,
@@ -40,6 +41,24 @@ def _mock_response(
     else:
         resp.json.side_effect = ValueError("no json")
     return resp
+
+
+def test_expected_tools_registered():
+    base_plan_tools = {
+        "cluster_health",
+        "list_nodes",
+        "list_tasks",
+        "list_events",
+        "list_tools",
+        "cache_stats",
+        "submit_chat",
+        "swap_node_model",
+        "restart_node",
+        "clear_cache",
+        "run_regression_gate",
+        "coordinator_docs",
+    }
+    assert base_plan_tools.issubset(set(EXPECTED_TOOL_NAMES))
 
 
 @pytest.fixture
@@ -127,6 +146,16 @@ async def test_fetch_list_events_passes_limit_param(mock_client):
 
 
 @pytest.mark.asyncio
+async def test_fetch_list_events_event_type_filter(mock_client):
+    mock_client.request = AsyncMock(return_value=_mock_response(200, {"events": []}))
+    await fetch_list_events(limit=10, event_type="error", client=mock_client)
+    assert mock_client.request.await_args.kwargs["params"] == {
+        "limit": 10,
+        "event_type": "error",
+    }
+
+
+@pytest.mark.asyncio
 async def test_fetch_list_tools(mock_client):
     mock_client.request = AsyncMock(
         return_value=_mock_response(200, {"tools": ["search"], "stats": {"calls": 1}})
@@ -171,6 +200,16 @@ async def test_fetch_submit_chat_error(mock_client):
     )
     result = await fetch_submit_chat("x", client=mock_client)
     assert "503" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_submit_chat_503_error_field(mock_client):
+    mock_client.request = AsyncMock(
+        return_value=_mock_response(503, {"error": "no workers available"})
+    )
+    result = await fetch_submit_chat("x", client=mock_client)
+    assert "503" in result
+    assert "no workers" in result
 
 
 @pytest.mark.asyncio

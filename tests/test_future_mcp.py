@@ -7,9 +7,15 @@ import inspect
 import pytest
 
 import mcp_server
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+
 from mcp_server import (
     EXPECTED_TOOL_NAMES,
     RESOURCE_URIS,
+    _resource_json,
     fetch_coordinator_docs,
     mcp,
 )
@@ -82,6 +88,33 @@ def test_coordinator_docs_pointers():
     text = fetch_coordinator_docs()
     assert "NEXT_STEPS.md" in text
     assert "COMPONENTS.md" in text
+    assert "AdaptiveWorkerPool" in text
+
+
+@pytest.mark.asyncio
+async def test_resource_json_nodes():
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.is_error = False
+    mock_resp.json.return_value = {"active_nodes": {"n1": {}}}
+
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock(return_value=mock_resp)
+    mock_client.aclose = AsyncMock()
+
+    import mcp_server as ms
+
+    original = ms.coordinator_request
+
+    async def _fake(method, path, **kwargs):
+        return await original(method, path, client=mock_client, **kwargs)
+
+    ms.coordinator_request = _fake
+    try:
+        out = await _resource_json("GET", "/api/nodes")
+        assert '"active_nodes"' in out
+        assert "n1" in out
+    finally:
+        ms.coordinator_request = original
 
 
 def test_api_url_env_default():

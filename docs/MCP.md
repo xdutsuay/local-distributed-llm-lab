@@ -49,7 +49,7 @@ Start the coordinator before using cluster tools:
 | `cluster_health` | read | `GET /health` (`ray_status`) |
 | `list_nodes` | read | `GET /api/nodes` |
 | `list_tasks` | read | `GET /api/tasks` |
-| `list_events` | read | `GET /api/events` |
+| `list_events` | read | `GET /api/events` (optional `event_type` filter) |
 | `list_tools` | read | `GET /api/tools` |
 | `cache_stats` | read | `GET /api/cache/stats` |
 | `submit_chat` | **mutate** | `POST /chat` |
@@ -74,10 +74,12 @@ Requires [experiments/autoresearch](../experiments/autoresearch/README.md) submo
 
 ## Resources (3)
 
+Resources return **JSON** snapshots (use tools for human-readable summaries).
+
 | URI | Source |
 |-----|--------|
 | `llmlab://nodes/active` | `GET /api/nodes` |
-| `llmlab://tasks/recent` | last 20 tasks |
+| `llmlab://tasks/recent` | `GET /api/tasks` → last 20 |
 | `llmlab://events/recent` | `GET /api/events?limit=50` |
 
 ## Debug playbook (Phase B–C)
