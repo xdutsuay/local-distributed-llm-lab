@@ -1,0 +1,21 @@
+name: research
+steps:
+  - name: plan
+    prompt_template: |
+      You are a research planner. Given the topic below, output a JSON object with key "steps"
+      containing an array of 3-5 research sub-questions to answer.
+
+      Topic: {{.Input}}
+
+      Output only valid JSON, no markdown fences.
+    extract_key: steps
+
+  - name: synthesize
+    prompt_template: |
+      You are a research synthesizer. Using the research sub-questions listed below,
+      write a comprehensive, well-structured answer to the original topic.
+
+      Original topic: {{.Input}}
+      Sub-questions to address: {{.PriorOutput}}
+
+      Write a clear, detailed response covering all sub-questions.

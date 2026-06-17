@@ -1,0 +1,20 @@
+# lclreason configuration
+# Copy to config.yaml and adjust as needed.
+
+mode: coordinator        # coordinator | worker
+port: 8080
+db: lclreason.db
+
+chain:
+  dir: chains
+  default: default       # which chain YAML to use when none specified in request
+
+cache:
+  enabled: true
+  ttl: 1h
+
+heartbeat: 5s            # how often workers send heartbeats
+offline_after: 15s       # mark node offline after this long without heartbeat
+
+# --- worker mode only ---
+# coordinator: 192.168.1.10:8080

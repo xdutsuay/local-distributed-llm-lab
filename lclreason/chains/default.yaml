@@ -1,0 +1,7 @@
+name: default
+steps:
+  - name: answer
+    prompt_template: |
+      You are a helpful assistant. Answer the following clearly and concisely.
+
+      {{.Input}}

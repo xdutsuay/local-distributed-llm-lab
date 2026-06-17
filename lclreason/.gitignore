@@ -1,0 +1,5 @@
+lclreason
+lclreason-*
+lclreason.db
+config.yaml
+*.db
